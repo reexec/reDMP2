@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "disc_id": "ULKS46116",
+    "disc_version": "1.09",
+    "title": "DJ Max Portable 2",
+    "executable": "BOOT.BIN",
+    "sha1": "1a5c904989d430588da9653acad4b6c5cdab2885",
+    "size": 844948
+  }
+]

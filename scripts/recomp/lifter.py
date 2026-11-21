@@ -53,10 +53,18 @@ def find_allegrexrecomp() -> Path:
         "Could not find allegrexrecomp binary. Build the project first with cmake --preset <preset>."
     )
 
-def run_allegrexrecomp(args: list[str], capture_output: bool = False) -> subprocess.CompletedProcess:
+def run_allegrexrecomp(
+    args: list[str],
+    capture_output: bool = False,
+    timeout: float | None = 120.0,
+) -> subprocess.CompletedProcess:
     exe = find_allegrexrecomp()
     cmd = [str(exe)] + args
-    return subprocess.run(cmd, capture_output=capture_output, text=True, check=False)
+    try:
+        return subprocess.run(cmd, capture_output=capture_output, text=True, check=False, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(f"Error: allegrexrecomp timed out after {timeout}s: {' '.join(cmd)}", file=sys.stderr)
+        return subprocess.CompletedProcess(cmd, returncode=124, stdout="", stderr="timeout")
 
 if __name__ == "__main__":
     try:
