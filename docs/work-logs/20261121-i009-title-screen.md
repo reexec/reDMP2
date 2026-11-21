@@ -31,6 +31,15 @@
 
 ---
 
+## 3. 타이틀 화면 (**확인됨**, repsp #71 `1ffff97` + `0011`, 리뷰어 재현)
+
+* 입력 스크립트(`--max-vblanks 2400`): `600 START`(영상 건너뛰기), `750 CIRCLE`(저장 데이터 없음), `950 CIRCLE`(언어), `1100 CIRCLE` · `1180 UP` · `1260 CIRCLE`(이름 1글자 입력 후 END), `1360 CIRCLE`, `1460 RIGHT` · `1520 CIRCLE`(전작 질문), `1640 CIRCLE`(자동 저장). 각 입력 10 vblank 뒤 `NONE`. 전체 목록은 repsp #71 작업 로그에 있다.
+* 결과: `(e) VBlank limit reached`, 종료 코드 `0`, 새 미구현 NID와 디스패치 미스 `0`. 1,082프레임 표시, GE 리스트 807개, SAS 효과음과 스트림 배경음악 동작.
+* 마지막 프레임(1081)이 타이틀 화면이다: 무대 배경, 타이틀 로고, `PRESS START BUTTON`. 입력을 기다린다. 덤프는 커밋하지 않았다.
+* 정적 대조(`tools/import_coverage.py`, repsp v0.0.33): 구현 158 → **161** / 229, 미구현 71 → **68**.
+
+---
+
 # Work Log: Up to the Title Screen — Lift Patch `0011` (issue #9)
 
 * Issue: [#9](https://github.com/reexec/reDMP2/issues/9) (paired HLE: [reexec/repsp#71](https://github.com/reexec/repsp/issues/71))
@@ -52,3 +61,19 @@
 * `tools/lift_audit.py`: `7,982` bodies across `125` files, `Data misread as code: 0`, `Mismatches found: 0`, `284` tail-call SCCs.
 * `reDMP1` PRX `funcs` (read-only): unchanged at `9,004` (`761,828` B, `92.5%`).
 * Win64 Release build: **0 warnings**, CTest **32/32 passed**.
+
+---
+
+## 3. Title screen (**confirmed**, repsp #71 `1ffff97` + `0011`, reproduced by the reviewer)
+
+* Input script (`--max-vblanks 2400`), each followed by `NONE` 10 vblanks later; the full list is in repsp #71's work log:
+  * `600 START`: skip the movie
+  * `750 CIRCLE`: no savedata
+  * `950 CIRCLE`: language
+  * `1100 CIRCLE`, `1180 UP`, `1260 CIRCLE`: one-letter name, then END
+  * `1360 CIRCLE`
+  * `1460 RIGHT`, `1520 CIRCLE`: the previous-game question
+  * `1640 CIRCLE`: autosave
+* Result: `(e) VBlank limit reached`, exit code `0`, no new unimplemented NID and no dispatch miss. 1,082 frames presented, 807 GE lists, SAS effects and streamed music running.
+* The last frame (1081) is the title screen and waits for input. It shows the stage background, the title logo and `PRESS START BUTTON`. Dumps are not committed.
+* Static match (`tools/import_coverage.py`, repsp v0.0.33): implemented 158 → **161** of 229, missing 71 → **68**.
