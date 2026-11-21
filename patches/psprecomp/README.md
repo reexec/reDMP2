@@ -8,13 +8,15 @@ upstream이 받아들이면 해당 로컬 패치를 지우고 submodule을 올�
 
 | 로컬 패치 | upstream | 상태 |
 |---|---|---|
-| `0001-relocate-prx-at-base.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | 제출함. 로컬 패치는 PR의 커밋과 같다(테스트 파일만 뺐다). |
-| `0003-jalr-fallthrough.patch` | [sp00nznet/psprecomp#31](https://github.com/sp00nznet/psprecomp/pull/31)(다른 기여자) | 같은 수정이 이미 제출돼 있어 로컬 패치는 #31의 조건(`jalr $zero`는 끝으로 본다)에 맞췄다. |
-| `0004-j-owned-target-goto.patch` | [sp00nznet/psprecomp#35](https://github.com/sp00nznet/psprecomp/pull/35) | 제출함. 로컬 패치는 PR의 커밋과 같다(테스트 파일만 뺐다). |
-| `0005-emit-trampoline.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | 제출함. 이 저장소의 런타임은 `src/recomp_abi/`에 있다. |
-| `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | 제출함. |
-| `0007-exec-scan-code-pointers.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | #36에 반영 필요, 미결정. |
-| `0008-exec-scan-outside-text-bodies.patch` | 없음 (로컬 전용) | 미제출 (`.text` 밖 발견 함수 본문의 `lui+addiu` 스캔). |
+| `0001-relocate-prx-at-base.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | upstream `main`에 머지됨(v0.6.0, 2026-11-21). 고정점 `5ca18fa`에는 없으므로 로컬 패치를 유지한다. 머지된 #36에도 `0007`이 고친 `ET_EXEC` 스캔 결함이 있다(`analyze.c`의 `if (an->scan_calls && !an->image)`). |
+| `0003-jalr-fallthrough.patch` | [sp00nznet/psprecomp#31](https://github.com/sp00nznet/psprecomp/pull/31)(다른 기여자) | #31은 upstream `main`에 머지됨(v0.6.0). 로컬 패치는 #31의 조건(`jalr $zero`는 끝으로 본다)에 맞췄다. |
+| `0004-j-owned-target-goto.patch` | [sp00nznet/psprecomp#35](https://github.com/sp00nznet/psprecomp/pull/35) | upstream `main`에 머지됨(v0.6.0). 고정점에 없으므로 유지. |
+| `0005-emit-trampoline.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | 열림(2026-11-21 확인). PR의 `j` 경로에 `0009`가 고친 결함(`!c->trampoline \|\| !is_function`)이 그대로 있다. |
+| `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | upstream `main`에 머지됨(v0.6.0). 고정점에 없으므로 유지. |
+| `0007-exec-scan-code-pointers.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | #36은 이미 머지됨. upstream에 이 수정을 다룬 PR·issue 없음(2026-11-21 확인). 제출 보류(사용자 결정). |
+| `0008-exec-scan-outside-text-bodies.patch` | 없음 (로컬 전용) | 미제출, 보류(사용자 결정). 같은 수정을 다룬 PR·issue 없음. (`.text` 밖 발견 함수 본문의 `lui+addiu` 스캔) |
+| `0009-tail-jump-import-return.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | #37 후속 수정(`0005`는 PR #37 그대로 유지). #37에 반영 보류(사용자 결정). |
+| `0010-exclude-import-stubs-from-funcs.patch` | 없음 (로컬 전용) | 미제출, 보류(사용자 결정). 같은 수정을 다룬 PR·issue 없음. (임포트 스텁을 `an->funcs`에서 제외하고 디스패치 테이블에 `psp_import_*`로 등록) |
 
 ## 패치
 
@@ -25,6 +27,8 @@ upstream이 받아들이면 해당 로컬 패치를 지우고 submodule을 올�
 5. **`0006-loop-hook.patch`** — `emit.c`가 내보내는 헤더에 `#ifdef PSPRECOMP_LOOP_HOOK` 분기를 추가해 `PSP_LOOP(a)`를 `psp_loop_hook(a)`로 연결한다.
 6. **`0007-exec-scan-code-pointers.patch`** — `0001`이 `an->image` 존재 시 `.text` `lui+addiu` 포인터 스캔을 일괄 생략해 `ET_EXEC`에서 코드 조립 함수 포인터가 누락되는 문제를 고친다(`skip_lui_scan` 플래그로 PRX 이미지에서만 생략).
 7. **`0008-exec-scan-outside-text-bodies.patch`** — `a_discover` 고정점 루프에서 `.text` 바깥에 이미 발견된 함수 본문(`.data` 내 C++ 정적 초기화자 등)의 `lui+addiu`/`ori` 쌍만 추가로 스캔해 `.text` 진입점으로 승격한다(`skip_lui_scan == 0`일 때만).
+8. **`0009-tail-jump-import-return.patch`** — `--trampoline` 모드에서 `j <import>` 꼬리 호출이 `is_import`와 `is_function`이 동시에 참일 때 `return;`을 생략해 다음 레이블로 폴스루하는 결함을 고친다.
+9. **`0010-exclude-import-stubs-from-funcs.patch`** — `trace_function()`(`in.is_branch`/`in.is_jump`)과 `a_discover()`(초기 시드·재탐색 타깃)에서 `is_import_stub()`을 걸러 `.sceStub.text` 주소가 `an->funcs`에 들어가지 않도록 하고, `emit.c`의 `psp_recomp_register()`에 모든 임포트 스텁을 `psp_import_*`로 등록해 간접 호출(`jalr`)이 HLE에 도달하도록 한다.
 
 ---
 
@@ -38,10 +42,12 @@ When upstream accepts a patch, the matching local patch is removed and the submo
 
 | Local patch | Upstream | Status |
 |---|---|---|
-| `0001-relocate-prx-at-base.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | Submitted; matches the PR commit minus the test file. |
-| `0003-jalr-fallthrough.patch` | [sp00nznet/psprecomp#31](https://github.com/sp00nznet/psprecomp/pull/31) (another contributor) | Matches #31's condition (`jalr $zero` ends a body). |
-| `0004-j-owned-target-goto.patch` | [sp00nznet/psprecomp#35](https://github.com/sp00nznet/psprecomp/pull/35) | Submitted; matches the PR commit minus the test file. |
-| `0005-emit-trampoline.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | Submitted; this repository's runtime is in `src/recomp_abi/`. |
-| `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | Submitted. |
-| `0007-exec-scan-code-pointers.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | Needs to go into #36, undecided. |
-| `0008-exec-scan-outside-text-bodies.patch` | None (local) | Not submitted (scans discovered non-`.text` function bodies for `lui+addiu` pointers when `skip_lui_scan == 0`). |
+| `0001-relocate-prx-at-base.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | Merged into upstream `main` (v0.6.0, 2026-11-21); not in the pinned `5ca18fa`, so the local patch stays. The merged #36 carries the `ET_EXEC` scan defect `0007` fixes (`analyze.c`: `if (an->scan_calls && !an->image)`). |
+| `0003-jalr-fallthrough.patch` | [sp00nznet/psprecomp#31](https://github.com/sp00nznet/psprecomp/pull/31) (another contributor) | #31 merged into upstream `main` (v0.6.0); matches #31's condition (`jalr $zero` ends a body). |
+| `0004-j-owned-target-goto.patch` | [sp00nznet/psprecomp#35](https://github.com/sp00nznet/psprecomp/pull/35) | Merged into upstream `main` (v0.6.0); kept, not in the pin. |
+| `0005-emit-trampoline.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | Open (checked 2026-11-21); its `j` path still has the defect `0009` fixes (`!c->trampoline \|\| !is_function`). |
+| `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | Merged into upstream `main` (v0.6.0); kept, not in the pin. |
+| `0007-exec-scan-code-pointers.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | #36 is already merged; no upstream PR or issue covers this fix (checked 2026-11-21). Submission on hold (user decision). |
+| `0008-exec-scan-outside-text-bodies.patch` | None (local) | Not submitted, on hold (user decision); no upstream PR or issue covers it. (Scans discovered non-`.text` function bodies for `lui+addiu` pointers when `skip_lui_scan == 0`). |
+| `0009-tail-jump-import-return.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | Follow-up to #37 (`0005` kept equal to PR #37); always emit `return;` after `j <import>`. Taking it into #37 is on hold (user decision). |
+| `0010-exclude-import-stubs-from-funcs.patch` | None (local) | Not submitted, on hold (user decision); no upstream PR or issue covers it. (Filters `is_import_stub()` from `an->funcs` and registers every `an->imports[i]` as `psp_import_*` in `psp_recomp_register()` for indirect calls). |

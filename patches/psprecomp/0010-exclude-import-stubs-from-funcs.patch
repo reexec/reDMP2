@@ -1,0 +1,76 @@
+From: reDMP2 <noreply@reexec.local>
+Subject: [PATCH] analyze/emit: exclude import stubs from funcs and register psp_import_* in dispatch
+
+Upstream analyze.c assumed the import stub section (.sceStub.text) lies outside
+a_in_range(an, ...), so trace_function() (in.is_branch / in.is_jump) and
+a_discover() (initial seeds and fixpoint re-walk targets) checked a_in_range()
+without checking !is_import_stub().
+
+When an->size covers the full PT_LOAD segment (as in fixed-address ET_EXEC
+images), .sceStub.text is inside a_in_range(). Tail jumps (`j <import>`) and
+data-pointer seeds pointing into .sceStub.text then promote import stub
+addresses into `an->funcs`, emitting dummy `jr $ra; nop` functions and
+registering them in the dispatch table.
+
+Filter `is_import_stub(an, ...)` at all four entry/target sites in analyze.c so
+import stubs are only ever recorded in `an->imports` and never in `an->funcs`,
+and register every `an->imports[i]` in `psp_recomp_register()` pointing at
+`psp_import_XXXXXXXX` so indirect calls (`jalr`) to an import stub address
+dispatch cleanly to the HLE.
+---
+ tools/allegrexrecomp/analyze.c | 8 ++++----
+ tools/allegrexrecomp/emit.c    | 3 +++
+ 2 files changed, 7 insertions(+), 4 deletions(-)
+
+diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
+--- a/tools/allegrexrecomp/analyze.c
++++ b/tools/allegrexrecomp/analyze.c
+@@ -205,7 +205,7 @@ static int trace_function(walk_ctx *c, uint32_t entry, a_func *out) {
+             if (in.is_branch) {
+                 /* Conditional: the target is another block of this function,
+                  * and execution also falls through past the delay slot. */
+-                if (in.has_target && a_in_range(an, in.target)) {
++                if (in.has_target && a_in_range(an, in.target) && !is_import_stub(an, in.target)) {
+                     uint32_t ti = word_index(an, in.target);
+                     if ((c->seen[ti] & SEEN_CODE) && !c->entry_map[ti]) {
+                         /* Already claimed by an earlier walk, and not an entry.
+@@ -246,7 +246,7 @@ static int trace_function(walk_ctx *c, uint32_t entry, a_func *out) {
+                  * Over-splitting is the safe direction to err: a wrongly split
+                  * function is still correct code reached through the dispatch
+                  * table, whereas a wrongly merged one has bogus boundaries. */
+-                if (in.has_target && a_in_range(an, in.target)) {
++                if (in.has_target && a_in_range(an, in.target) && !is_import_stub(an, in.target)) {
+                     uint32_t bi = word_index(an, in.target);
+                     if (in.target <= a && a != entry && !is_known_entry(c, in.target)) {
+                         /* Backward `j` -- a loop back-edge into this function's
+@@ -492,7 +492,7 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+      * ask "is this somebody's entry?", and neither can answer correctly if
+      * entries are still being discovered as the walk proceeds. */
+     for (int i = 0; i < nseeds; i++) {
+-        if (!a_in_range(an, seeds[i])) continue;
++        if (!a_in_range(an, seeds[i]) || is_import_stub(an, seeds[i])) continue;
+         entry_map[word_index(an, seeds[i])] = 1;
+         u32_push(&queue, seeds[i]);
+     }
+@@ -643,7 +643,7 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+         int added = 0;
+         for (int i = 0; i < targets.n; i++) {
+             uint32_t t = targets.v[i];
+-            if (!a_in_range(an, t)) continue;
++            if (!a_in_range(an, t) || is_import_stub(an, t)) continue;
+             uint32_t ti = word_index(an, t);
+             if (entry_map[ti]) continue;
+             entry_map[ti] = 1;
+diff --git a/tools/allegrexrecomp/emit.c b/tools/allegrexrecomp/emit.c
+--- a/tools/allegrexrecomp/emit.c
++++ b/tools/allegrexrecomp/emit.c
+@@ -1490,6 +1490,9 @@ int a_emit(const a_analysis *an, const emit_opts *o) {
+     for (i = 0; i < an->nfuncs; i++)
+         fprintf(of.f, "    psp_register(0x%08Xu, psp_func_%08X);\n",
+                 an->funcs[i].addr, an->funcs[i].addr);
++    for (i = 0; i < an->nimports; i++)
++        fprintf(of.f, "    psp_register(0x%08Xu, psp_import_%08X);\n",
++                an->imports[i], an->imports[i]);
+     /* Interior labels last, so a real function entry always wins a collision. */
+     for (i = 0; i < c.nentries; i++)
+         fprintf(of.f, "    psp_register_label(0x%08Xu, psp_at_%08X);\n",
