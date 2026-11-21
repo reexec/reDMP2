@@ -32,7 +32,12 @@ sequenceDiagram
   * **라이브러리 / NID**: `SysMemUserForUser` / `0x7591C7DB` (`sceKernelSetCompiledSdkVersion`)
   * **종료 코드**: `10`
   * **디스패치 / 프레임**: 디스패치 `0`회, 표시 `0`프레임 (`VBlank = 0`, `GE lists = 0`, `Audio output_calls = 0`)
-* **로컬 CTest 상태 (**확인됨**)**: 생성 코드 포함 Release 빌드 기준 **31/32 통과, 1 실패**(`app_lift_check` 통과, `app_smoke_registered_roms`는 위 미구현 NID 정지로 실패). 생성 코드 없는 Win64 Debug/Release 빌드는 **30/30 통과**.
+* **로컬 CTest 상태 (**확인됨**)**: 생성 코드 포함 Release 빌드 기준 **31/32 통과, 1 실패**(`app_lift_check` 통과, `app_smoke_registered_roms`는 위 미구현 NID 정지로 실패). 생성 코드 없는 Win64 Debug/Release 빌드는 **30/30 통과** (로컬 `roms/` 포함 시 31/31).
+* **issue #5 후속 (`0008-exec-scan-outside-text-bodies.patch`) + `repsp` #67 작업 트리(`5e69d39`) 측정 (**확인됨**)**:
+  * `.data` 내 C++ 정적 초기화자(`0x088D0BB8`)가 조립한 `0x088832B8`·`0x08883278`이 리프트된 뒤, 헤드리스 실행은 C++ 정적 초기화, `sceDisplaySetMode`(2회), `sceGeEdramGetAddr`/`sceGeSetCallback`/`sceGeListEnQueue`(2 리스트, 289 명령, 2 finish), `scePowerRegisterCallback`, `sceUmdActivate`/`sceUmdGetDriveStat`, `sceUtilityLoadAvModule`(3회)까지 모두 통과하고 다음 미구현 NID에서 정지한다:
+    * **정지 분류**: `(b) Unimplemented kernel NID`
+    * **라이브러리 / NID**: `ThreadManForUser:sceKernelCreateVpl (0x56C039B5)`
+    * **종료 코드**: `10` (디스패치 `0`, 표시 `0`프레임, `GE: 2 lists, 289 commands, 2 finishes`)
 * **이전 기록 (issue #1, `repsp` `7f856eb`)**: `ET_EXEC` 미지원으로 `LoadPrx failed: Unsupported ELF type (expected PRX e_type 0xFFA0)`(종료 코드 `1`, CTest 30/32)에서 정지했으나, `repsp v0.0.30`([reexec/repsp#65](https://github.com/reexec/repsp/issues/65))의 `ET_EXEC` 로드 지원으로 해소되었다.
 * 참고: `redmp2` CLI는 `<game_directory>`를 첫 번째 위치 인자(`argv[1]`)로 받는다.
 
@@ -123,7 +128,8 @@ Running `redmp2.exe roms --headless --max-vblanks 600 --save-dir <temp>\save --c
 * **Library / NID**: `SysMemUserForUser` / `0x7591C7DB` (`sceKernelSetCompiledSdkVersion`)
 * **Exit code**: `10`
 * **Counters**: `0` dispatches, `0` frames presented (`VBlank = 0`, `GE lists = 0`, `Audio output_calls = 0`).
-* **Local CTest (**confirmed**)**: Release with generated code passes **31/32** (`app_lift_check` now passes; `app_smoke_registered_roms` fails on this unimplemented NID and is kept enabled). Win64 Debug/Release without generated code pass **30/30**.
+* **Local CTest (**confirmed**)**: Release with generated code passes **31/32** (`app_lift_check` now passes; `app_smoke_registered_roms` fails on this unimplemented NID and is kept enabled). Win64 Debug/Release without generated code pass **30/30** (31/31 locally when `roms/` is present).
+* **Issue #5 follow-up (`0008-exec-scan-outside-text-bodies.patch`) with `repsp` #67 working tree (`5e69d39`, **confirmed**)**: Once `0x088832B8` and `0x08883278` are lifted, the headless run passes C++ static initialization, `sceDisplaySetMode` (2 calls), `sceGe` setup and 2 display lists (289 commands, 2 finishes), `scePowerRegisterCallback`, `sceUmdActivate`/`GetDriveStat`, and `sceUtilityLoadAvModule` (3 calls), stopping at `(b) Unimplemented kernel NID`, `ThreadManForUser:sceKernelCreateVpl (0x56C039B5)`, exit code `10`.
 
 ## 2. Static Import Coverage (`tools/import_coverage.py`, **confirmed**)
 

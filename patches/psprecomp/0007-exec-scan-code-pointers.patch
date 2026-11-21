@@ -1,0 +1,78 @@
+From: reDMP2 <noreply@reexec.local>
+Subject: [PATCH] analyze: run .text lui+addiu pointer scan on ET_EXEC images
+
+Patch 0001 skipped the .text lui+addiu pair scan whenever an->image was set.
+That is right for PRX modules (relocated PRXs enumerate HI16/LO16 pairs via
+SHT_PRXRELOC, and unrelocated base-0 PRXs collide with small immediates),
+but fixed-address ET_EXEC executables also receive segment 0 as an->image
+while having no relocation tables, causing code-built function pointers
+(such as thread entry points passed to sceKernelCreateThread) to be missed.
+
+Track skip_lui_scan explicitly on a_analysis: set it for relocated PRXs and
+for non-ET_EXEC (e_type != 2) images, leaving ET_EXEC and imageless runs
+to execute the upstream lui+addiu scan.
+---
+ tools/allegrexrecomp/analyze.c | 12 ++++++------
+ tools/allegrexrecomp/analyze.h |  1 +
+ tools/allegrexrecomp/main.c    | 14 ++++++++------
+ 3 files changed, 15 insertions(+), 12 deletions(-)
+
+diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
+--- a/tools/allegrexrecomp/analyze.c
++++ b/tools/allegrexrecomp/analyze.c
+@@ -533,12 +533,12 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+      * data table. Any lui whose paired addiu/ori yields an address that is
+      * in range and decodes as valid code is promoted to an entry, same
+      * over-split-is-safe reasoning as everywhere else in this file. */
+-    /* When an->image is present, pointer seeds are already harvested from
+-     * relocation tables (or ET_EXEC data scan). Scanning .text for lui+addiu
+-     * pairs on an unrelocated PRX (whose lui immediates are 0) produces false
+-     * entries at 0x0000xxxx, while on a relocated PRX R_MIPS_HI16/LO16
+-     * relocations already enumerate every split-pair code reference. */
+-    if (an->scan_calls && !an->image) {
++    /* Skip the .text lui+addiu pair scan on PRX images: an unrelocated PRX
++     * has zero lui immediates that collide with .text, while a relocated PRX
++     * already enumerates every split-pair code reference through HI16/LO16
++     * relocations. Fixed-address ET_EXEC images have no relocation tables,
++     * so they need this scan to find code-built function pointers. */
++    if (an->scan_calls && !an->skip_lui_scan) {
+         uint32_t sbase = an->scan_size ? an->scan_base : an->base;
+         uint32_t ssize = an->scan_size ? an->scan_size : an->size;
+         for (uint32_t off = 0; off + 4 <= ssize; off += 4) {
+diff --git a/tools/allegrexrecomp/analyze.h b/tools/allegrexrecomp/analyze.h
+--- a/tools/allegrexrecomp/analyze.h
++++ b/tools/allegrexrecomp/analyze.h
+@@ -88,6 +88,7 @@ typedef struct {
+     const uint8_t *image;
+     uint32_t       image_base;
+     uint32_t       image_size;
++    int            skip_lui_scan;   /* 1 for PRX images (relocs or base 0) */
+ 
+     /* Output */
+     a_func   *funcs;
+diff --git a/tools/allegrexrecomp/main.c b/tools/allegrexrecomp/main.c
+--- a/tools/allegrexrecomp/main.c
++++ b/tools/allegrexrecomp/main.c
+@@ -518,14 +518,16 @@ static int load_and_discover(const char *path, uint32_t base, uint8_t **out_relo
+     an->stub_size = e->stub_size;
+     an->scan_calls = 1;
+     /* The whole loaded segment, so jump tables in .rodata/.data can be read. */
+     if (reloc_buf) {
+-        an->image      = reloc_buf;
+-        an->image_base = base;
+-        an->image_size = (uint32_t)reloc_sz;
++        an->image         = reloc_buf;
++        an->image_base    = base;
++        an->image_size    = (uint32_t)reloc_sz;
++        an->skip_lui_scan = 1;
+     } else if (e->nsegments) {
+-        an->image      = b->data + e->seg[0].offset;
+-        an->image_base = e->seg[0].addr;
+-        an->image_size = e->seg[0].filesz;
++        an->image         = b->data + e->seg[0].offset;
++        an->image_base    = e->seg[0].addr;
++        an->image_size    = e->seg[0].filesz;
++        an->skip_lui_scan = (e->type != 2);
+     }
+ 
+     /* Seeds come from three places, in increasing order of how much they find:

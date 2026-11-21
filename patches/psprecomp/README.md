@@ -13,6 +13,8 @@ upstream이 받아들이면 해당 로컬 패치를 지우고 submodule을 올�
 | `0004-j-owned-target-goto.patch` | [sp00nznet/psprecomp#35](https://github.com/sp00nznet/psprecomp/pull/35) | 제출함. 로컬 패치는 PR의 커밋과 같다(테스트 파일만 뺐다). |
 | `0005-emit-trampoline.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | 제출함. 이 저장소의 런타임은 `src/recomp_abi/`에 있다. |
 | `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | 제출함. |
+| `0007-exec-scan-code-pointers.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | #36에 반영 필요, 미결정. |
+| `0008-exec-scan-outside-text-bodies.patch` | 없음 (로컬 전용) | 미제출 (`.text` 밖 발견 함수 본문의 `lui+addiu` 스캔). |
 
 ## 패치
 
@@ -21,6 +23,8 @@ upstream이 받아들이면 해당 로컬 패치를 지우고 submodule을 올�
 3. **`0004-j-owned-target-goto.patch`** — 현재 본문이 가진 주소로 가는 `j`는 함수 진입점이라도 `goto`로 옮긴다(뒤로 가면 `PSP_LOOP`).
 4. **`0005-emit-trampoline.patch`** — `emit`에 `--trampoline` 선택 사항을 추가해 비링크 외부 꼬리 호출을 `PSP_TAIL(...)` / `psp_dispatch_tail`로 내보낸다.
 5. **`0006-loop-hook.patch`** — `emit.c`가 내보내는 헤더에 `#ifdef PSPRECOMP_LOOP_HOOK` 분기를 추가해 `PSP_LOOP(a)`를 `psp_loop_hook(a)`로 연결한다.
+6. **`0007-exec-scan-code-pointers.patch`** — `0001`이 `an->image` 존재 시 `.text` `lui+addiu` 포인터 스캔을 일괄 생략해 `ET_EXEC`에서 코드 조립 함수 포인터가 누락되는 문제를 고친다(`skip_lui_scan` 플래그로 PRX 이미지에서만 생략).
+7. **`0008-exec-scan-outside-text-bodies.patch`** — `a_discover` 고정점 루프에서 `.text` 바깥에 이미 발견된 함수 본문(`.data` 내 C++ 정적 초기화자 등)의 `lui+addiu`/`ori` 쌍만 추가로 스캔해 `.text` 진입점으로 승격한다(`skip_lui_scan == 0`일 때만).
 
 ---
 
@@ -39,3 +43,5 @@ When upstream accepts a patch, the matching local patch is removed and the submo
 | `0004-j-owned-target-goto.patch` | [sp00nznet/psprecomp#35](https://github.com/sp00nznet/psprecomp/pull/35) | Submitted; matches the PR commit minus the test file. |
 | `0005-emit-trampoline.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | Submitted; this repository's runtime is in `src/recomp_abi/`. |
 | `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | Submitted. |
+| `0007-exec-scan-code-pointers.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | Needs to go into #36, undecided. |
+| `0008-exec-scan-outside-text-bodies.patch` | None (local) | Not submitted (scans discovered non-`.text` function bodies for `lui+addiu` pointers when `skip_lui_scan == 0`). |
