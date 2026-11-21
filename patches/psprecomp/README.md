@@ -1,0 +1,41 @@
+# psprecomp 패치 모음
+
+이 디렉터리는 `third_party/psprecomp`(커밋 `5ca18fa`, upstream `main`)에 적용하는 로컬 패치를 보관한다. 패치는 configure 때 빌드 디렉터리의 복사본에만 적용되고, submodule 자체는 바꾸지 않는다. 이 패치 모음은 [reexec/reDMP1](https://github.com/reexec/reDMP1)에서 그대로 가져왔다.
+
+## upstream 상태
+
+upstream이 받아들이면 해당 로컬 패치를 지우고 submodule을 올린다.
+
+| 로컬 패치 | upstream | 상태 |
+|---|---|---|
+| `0001-relocate-prx-at-base.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | 제출함. 로컬 패치는 PR의 커밋과 같다(테스트 파일만 뺐다). |
+| `0003-jalr-fallthrough.patch` | [sp00nznet/psprecomp#31](https://github.com/sp00nznet/psprecomp/pull/31)(다른 기여자) | 같은 수정이 이미 제출돼 있어 로컬 패치는 #31의 조건(`jalr $zero`는 끝으로 본다)에 맞췄다. |
+| `0004-j-owned-target-goto.patch` | [sp00nznet/psprecomp#35](https://github.com/sp00nznet/psprecomp/pull/35) | 제출함. 로컬 패치는 PR의 커밋과 같다(테스트 파일만 뺐다). |
+| `0005-emit-trampoline.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | 제출함. 이 저장소의 런타임은 `src/recomp_abi/`에 있다. |
+| `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | 제출함. |
+
+## 패치
+
+1. **`0001-relocate-prx-at-base.patch`** — PRX를 지정한 주소에 재배치해 옮긴다(`prx_relocate()`, `--base <addr>`, `relocate <file> <base> <out>`).
+2. **`0003-jalr-fallthrough.patch`** — 본문이 연결하는 `jalr`로 끝나면 다음 명령으로 이어지는 흐름을 낸다. `jr`과 `jalr $zero`는 끝으로 본다.
+3. **`0004-j-owned-target-goto.patch`** — 현재 본문이 가진 주소로 가는 `j`는 함수 진입점이라도 `goto`로 옮긴다(뒤로 가면 `PSP_LOOP`).
+4. **`0005-emit-trampoline.patch`** — `emit`에 `--trampoline` 선택 사항을 추가해 비링크 외부 꼬리 호출을 `PSP_TAIL(...)` / `psp_dispatch_tail`로 내보낸다.
+5. **`0006-loop-hook.patch`** — `emit.c`가 내보내는 헤더에 `#ifdef PSPRECOMP_LOOP_HOOK` 분기를 추가해 `PSP_LOOP(a)`를 `psp_loop_hook(a)`로 연결한다.
+
+---
+
+# psprecomp patches
+
+This directory keeps the local patches applied to `third_party/psprecomp` (commit `5ca18fa`, upstream `main`). They are applied at configure time to a copy in the build directory; the submodule itself is not modified. Carried over from [reexec/reDMP1](https://github.com/reexec/reDMP1).
+
+## Upstream status
+
+When upstream accepts a patch, the matching local patch is removed and the submodule moved forward.
+
+| Local patch | Upstream | Status |
+|---|---|---|
+| `0001-relocate-prx-at-base.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | Submitted; matches the PR commit minus the test file. |
+| `0003-jalr-fallthrough.patch` | [sp00nznet/psprecomp#31](https://github.com/sp00nznet/psprecomp/pull/31) (another contributor) | Matches #31's condition (`jalr $zero` ends a body). |
+| `0004-j-owned-target-goto.patch` | [sp00nznet/psprecomp#35](https://github.com/sp00nznet/psprecomp/pull/35) | Submitted; matches the PR commit minus the test file. |
+| `0005-emit-trampoline.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | Submitted; this repository's runtime is in `src/recomp_abi/`. |
+| `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | Submitted. |

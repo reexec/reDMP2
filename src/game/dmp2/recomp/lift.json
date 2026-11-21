@@ -1,0 +1,11 @@
+{
+  "base": "0x08804000",
+  "prefix": "dmp2",
+  "trampoline": true,
+  "start_thread": {
+    "priority": 32,
+    "stack_size": 262144,
+    "attr": 0,
+    "source": "uOFW modulemgr"
+  }
+}
