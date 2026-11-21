@@ -25,7 +25,9 @@ reDMP1(DMP1)과 다른 점:
 
 * **확인됨**: 디스크에 `USRDIR/modules/*.prx`가 **없다**. DMP1은 `sc_sascore.prx`, `libatrac3plus.prx`, `mpeg.prx` 등을 디스크에서 올렸다. **추정**: DMP2는 `sceUtilityLoadAvModule`/`sceUtilityLoadModule`(펌웨어 2.71+)로 펌웨어의 모듈을 올린다. repsp는 이 import들을 NID 경계에서 이미 HLE하므로 영향은 `sceUtility`의 모듈 로드 함수가 성공을 돌려주는지에 한정될 것으로 본다. 첫 부팅 측정에서 확인한다.
 * **확인됨**: `sceNet`/`sceNetAdhoc*`(애드혹 멀티플레이)와 `sceHprm`(리모컨)이 새로 import된다. repsp에 없는 NID는 첫 부팅 측정의 정지 분류 `(b)`(미구현 import)로 드러난다. 기본 방향은 "애드혹 미지원"을 돌려주는 최소 HLE이며, 후속 issue에서 repsp에 넣는다.
-* 로드 베이스(`0x08804000`)와 컨테이너 형식(평문 `ET_EXEC` `BOOT.BIN`)은 DMP1과 같다. 그래서 lift 설정(`lift.json`)과 psprecomp 패치는 그대로 쓸 수 있을 것으로 본다(**추정**, lift 결과로 확인).
+* **확인됨**: 컨테이너 형식이 DMP1과 **다르다**. DMP1의 `BOOT.BIN`은 재배치 가능한 PRX(`e_type 0xFFA0`, entry `0x128`)를 `0x08804000`에 재배치해 썼지만, DMP2의 `BOOT.BIN`은 `0x08804000`에 고정된 `ET_EXEC`(`e_type 2`, entry `0x0880FC4C`, 재배치 섹션 비어 있음)다. 최종 주소는 같다.
+  * repsp의 `repsp::module::ProcessPrx`(`src/module/prx.cpp`)는 `e_type 0xFFA0`만 받는다. 그래서 첫 부팅은 로드 단계에서 거부될 것으로 본다(**추정**, §5에서 측정). `ET_EXEC` 로드는 PSP 일반 기능이므로 repsp issue로 repsp에 넣는다(후속, 이 task의 범위 밖).
+  * `allegrexrecomp`가 `ET_EXEC`를 lift하는지, psprecomp 패치 `0001-relocate-prx-at-base`가 `ET_EXEC`에서 아무 일도 하지 않는지는 단계 B의 lift 결과로 확인한다(**미확정**).
 * `EBOOT.BIN` 복호화 결과와 `BOOT.BIN`의 바이트 일치는 reDMP1과 같이 **미확정**으로 두고 `BOOT.BIN`으로 진행한다(키 불필요).
 
 ## 3. 레이어 구조
@@ -107,7 +109,9 @@ Differences from reDMP1 (DMP1):
 
 * **Confirmed**: the disc has **no** `USRDIR/modules/*.prx`. **Inferred**: DMP2 loads the firmware's modules through `sceUtilityLoadAvModule`/`sceUtilityLoadModule` (firmware 2.71+). repsp already HLEs those imports at the NID boundary, so the impact should be limited to whether the `sceUtility` module-load functions report success; the first boot measurement checks this.
 * **Confirmed**: `sceNet`/`sceNetAdhoc*` (ad-hoc multiplayer) and `sceHprm` (remote) are newly imported. NIDs repsp lacks surface as stop class `(b)` (unimplemented import) in the first boot measurement. The default direction is a minimal HLE that reports ad-hoc as unavailable, added to repsp in a follow-up issue.
-* The load base (`0x08804000`) and container (plain `ET_EXEC` `BOOT.BIN`) are the same as DMP1, so `lift.json` and the psprecomp patches should carry over unchanged (**inferred**, confirmed by the lift).
+* **Confirmed**: the container **differs** from DMP1. DMP1's `BOOT.BIN` is a relocatable PRX (`e_type 0xFFA0`, entry `0x128`) relocated to `0x08804000`; DMP2's `BOOT.BIN` is an `ET_EXEC` fixed at `0x08804000` (`e_type 2`, entry `0x0880FC4C`, empty relocation sections). The final addresses are the same.
+  * repsp's `repsp::module::ProcessPrx` (`src/module/prx.cpp`) accepts only `e_type 0xFFA0`, so the first boot is expected to be rejected at load (**inferred**, measured in §5). Loading `ET_EXEC` is general PSP functionality and goes into repsp through a repsp issue (follow-up, outside this task).
+  * Whether `allegrexrecomp` lifts an `ET_EXEC`, and whether psprecomp patch `0001-relocate-prx-at-base` is a no-op for it, is checked by the phase B lift (**unresolved**).
 * Byte identity of decrypted `EBOOT.BIN` and `BOOT.BIN` stays **unresolved** as in reDMP1; `BOOT.BIN` is used (no keys needed).
 
 ## 3. Layer structure
