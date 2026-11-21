@@ -25,7 +25,8 @@
 
 ## 단계 C: 첫 부팅 측정과 문서
 
-1. `redmp2 --headless --max-vblanks 600 roms`와 창 모드 `redmp2 roms`(최대 1분)를 실행한다. 정지 분류, 마지막 로그 80줄, 미구현 import 목록, 첫 화면 여부를 기록한다. 로그 파일은 커밋하지 않는다.
+1. `redmp2 --headless --max-vblanks 600 roms`와 창 모드 `redmp2 roms`(최대 1분)를 실행한다. 정지 분류, 마지막 로그 80줄, 미구현 import 목록, 첫 화면 여부를 기록한다. 로그 파일은 커밋하지 않는다. (단계 B 결과: 실행은 repsp `LoadPrx`의 `ET_EXEC` 거부에서 멈춘다. 이 사실과 CTest 실패 2건(`app_smoke_registered_roms`, `app_lift_check`, 로컬 전용)을 그대로 기록한다.)
+1a. 로드에서 멈추므로 실행 없이 얻을 수 있는 것을 정적으로 측정한다: `tools/import_coverage.py`(새 도구)로 lift 입력의 import NID(라이브러리, NID, 가능하면 공개 이름)를 repsp가 등록하는 HLE NID와 대조해, 라이브러리별 구현/미구현 수와 미구현 NID 목록을 낸다. repsp의 등록 목록은 repsp 소스(`third_party/repsp/src/hle/`)에서 읽는다(repsp는 고치지 않는다).
 2. 문서: `docs/analysis/disc-image.md`, `docs/analysis/executable.md`, `docs/analysis/boot.md`(확인됨/추정/미확정 구분), `docs/analysis/README.md` 색인, `docs/EXECUTABLE_DESIGN.ko.md`/`.en.md`.
 3. 작업 로그 `docs/work-logs/20261121-i001-project-bootstrap.md`: 단계별 수행 내용, 명령, 결과 수치, 남은 문제와 후속 issue 제안.
 4. 설계 §6의 검증 7(`git grep -i -E "dmp1|redmp1"`)을 확인하고 커밋한다.
@@ -65,7 +66,8 @@ Renaming rules (all phases): `reDMP1`→`reDMP2`, `redmp1`→`redmp2`, `REDMP1`�
 
 ## Phase C: first boot measurement and documents
 
-1. Run `redmp2 --headless --max-vblanks 600 roms` and windowed `redmp2 roms` (at most a minute). Record the stop class, the last 80 log lines, unimplemented imports and whether a first frame appears. Logs are not committed.
+1. Run `redmp2 --headless --max-vblanks 600 roms` and windowed `redmp2 roms` (at most a minute). Record the stop class, the last 80 log lines, unimplemented imports and whether a first frame appears. Logs are not committed. (Phase B result: the run stops at repsp `LoadPrx` rejecting `ET_EXEC`; record that and the two failing local-only CTest tests, `app_smoke_registered_roms` and `app_lift_check`, as they are.)
+1a. Since the run stops at load, measure statically what does not need a run: a new `tools/import_coverage.py` matches the lift input's import NIDs (library, NID, public name where known) against the HLE NIDs repsp registers, reporting implemented/missing counts per library and the missing NIDs. repsp's registrations are read from its source (`third_party/repsp/src/hle/`), which is not modified.
 2. Documents: `docs/analysis/disc-image.md`, `executable.md`, `boot.md` (confirmed/inferred/unresolved), the analysis index, `docs/EXECUTABLE_DESIGN.ko.md`/`.en.md`.
 3. Work log `docs/work-logs/20261121-i001-project-bootstrap.md`: what was done per phase, commands, measured numbers, open problems and proposed follow-up issues.
 4. Check design §6 item 7 and commit.
