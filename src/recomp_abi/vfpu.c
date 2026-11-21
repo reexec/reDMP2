@@ -1,4 +1,4 @@
-/* Derived from psprecomp commit 5ca18fa (src/vfpu.c) under MIT license. */
+/* Derived from psprecomp commit 14749c1 (v0.6.0, src/vfpu.c) under MIT license. */
 /* psprecomp — the VFPU. See include/psprecomp/vfpu.h. */
 
 #include "psprecomp/vfpu.h"

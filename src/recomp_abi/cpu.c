@@ -1,4 +1,4 @@
-/* Derived from psprecomp commit 5ca18fa (include/psprecomp/cpu.h) under MIT license. */
+/* Derived from psprecomp commit 14749c1 (v0.6.0, include/psprecomp/cpu.h) under MIT license. */
 
 #include "recomp_abi.h"
 
