@@ -17,6 +17,7 @@ upstream이 받아들이면 해당 로컬 패치를 지우고 submodule을 올�
 | `0008-exec-scan-outside-text-bodies.patch` | 없음 (로컬 전용) | 미제출, 보류(사용자 결정). 같은 수정을 다룬 PR·issue 없음. (`.text` 밖 발견 함수 본문의 `lui+addiu` 스캔) |
 | `0009-tail-jump-import-return.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | #37 후속 수정(`0005`는 PR #37 그대로 유지). #37에 반영 보류(사용자 결정). |
 | `0010-exclude-import-stubs-from-funcs.patch` | 없음 (로컬 전용) | 미제출, 보류(사용자 결정). 같은 수정을 다룬 PR·issue 없음. (임포트 스텁을 `an->funcs`에서 제외하고 디스패치 테이블에 `psp_import_*`로 등록) |
+| `0011-lui-pair-reg-tracking.patch` | 없음 (로컬 전용) | 미제출, 보류(사용자 결정). (`lui+addiu`/`ori` 탐색을 4명령 고정 창에서 레지스터 추적 최대 16명령으로 확장, `ET_EXEC` 전용) |
 
 ## 패치
 
@@ -29,6 +30,7 @@ upstream이 받아들이면 해당 로컬 패치를 지우고 submodule을 올�
 7. **`0008-exec-scan-outside-text-bodies.patch`** — `a_discover` 고정점 루프에서 `.text` 바깥에 이미 발견된 함수 본문(`.data` 내 C++ 정적 초기화자 등)의 `lui+addiu`/`ori` 쌍만 추가로 스캔해 `.text` 진입점으로 승격한다(`skip_lui_scan == 0`일 때만).
 8. **`0009-tail-jump-import-return.patch`** — `--trampoline` 모드에서 `j <import>` 꼬리 호출이 `is_import`와 `is_function`이 동시에 참일 때 `return;`을 생략해 다음 레이블로 폴스루하는 결함을 고친다.
 9. **`0010-exclude-import-stubs-from-funcs.patch`** — `trace_function()`(`in.is_branch`/`in.is_jump`)과 `a_discover()`(초기 시드·재탐색 타깃)에서 `is_import_stub()`을 걸러 `.sceStub.text` 주소가 `an->funcs`에 들어가지 않도록 하고, `emit.c`의 `psp_recomp_register()`에 모든 임포트 스텁을 `psp_import_*`로 등록해 간접 호출(`jalr`)이 HLE에 도달하도록 한다.
+10. **`0011-lui-pair-reg-tracking.patch`** — `analyze.c`의 `.text` 및 `0008` 비-`.text` 본문 `lui+addiu`/`ori` 스캔이 공유하는 `scan_lui_pairs()`를 도입해 고정 4명령 창을 레지스터 추적(`rX` 덮어쓰기, 분기·점프의 지연 슬롯 이후, 또는 최대 16명령에서 종료; 그 사이 `rs == rX`인 모든 `addiu`/`ori` 채택)으로 교체한다(`skip_lui_scan == 0`인 `ET_EXEC` 전용).
 
 ---
 
@@ -51,3 +53,4 @@ When upstream accepts a patch, the matching local patch is removed and the submo
 | `0008-exec-scan-outside-text-bodies.patch` | None (local) | Not submitted, on hold (user decision); no upstream PR or issue covers it. (Scans discovered non-`.text` function bodies for `lui+addiu` pointers when `skip_lui_scan == 0`). |
 | `0009-tail-jump-import-return.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | Follow-up to #37 (`0005` kept equal to PR #37); always emit `return;` after `j <import>`. Taking it into #37 is on hold (user decision). |
 | `0010-exclude-import-stubs-from-funcs.patch` | None (local) | Not submitted, on hold (user decision); no upstream PR or issue covers it. (Filters `is_import_stub()` from `an->funcs` and registers every `an->imports[i]` as `psp_import_*` in `psp_recomp_register()` for indirect calls). |
+| `0011-lui-pair-reg-tracking.patch` | None (local) | Not submitted, on hold (user decision). (Replaces the fixed 4-instruction `lui+addiu`/`ori` window with register tracking up to 16 instructions, shared by `.text` and `0008` scans, `ET_EXEC` only). |

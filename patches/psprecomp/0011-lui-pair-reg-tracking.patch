@@ -1,0 +1,177 @@
+From: reDMP2 <noreply@reexec.local>
+Subject: [PATCH] analyze: use register tracking for lui+addiu/ori pointer pairing
+
+The fixed 4-instruction pairing window after `lui` misses valid code pointers
+when the compiler interleaves multiple `lui` instructions and argument setup
+before the paired `addiu`/`ori` (e.g. k=5 and k=6 in a `jal` delay slot).
+
+Extract a shared `scan_lui_pairs()` helper used by both the `.text` scan and
+patch 0008's discovered non-`.text` body scan (when `skip_lui_scan == 0`,
+leaving PRX handling untouched). Starting from `lui rX, hi`, walk up to 16
+instructions: emit every `addiu`/`ori` with `rs == rX` as a candidate `.text`
+entry (non-stub, valid instruction), and stop when `rX` is written, after a
+control transfer's delay slot, or at 16 instructions.
+---
+ tools/allegrexrecomp/analyze.c | 115 +++++++++++++++++++++++++----------------
+ 1 file changed, 71 insertions(+), 44 deletions(-)
+
+diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
+--- a/tools/allegrexrecomp/analyze.c
++++ b/tools/allegrexrecomp/analyze.c
+@@ -458,6 +458,73 @@ static int cmp_func(const void *a, const void *b) {
+     return (x > y) - (x < y);
+ }
+ 
++static int insn_writes_gpr(const a_insn *in, uint8_t reg) {
++    if (reg == 0) return 0;
++    if (in->is_call && in->op != A_JALR && reg == PSP_RA_INDEX) return 1;
++    switch (in->fmt) {
++    case F_RD_RS_RT:
++    case F_RD_RT_SA:
++    case F_RD_RT_RS:
++    case F_RD_RS:
++    case F_RD_RT:
++    case F_RD:
++    case F_RD_RS_RT_SA:
++        return in->rd == reg;
++    case F_RT_RS_IMM:
++    case F_RT_RS_UIMM:
++    case F_RT_IMM:
++    case F_RT_RS_POS_SZ:
++        return in->rt == reg;
++    default:
++        break;
++    }
++    switch (in->op) {
++    case A_LB: case A_LH: case A_LWL: case A_LW:
++    case A_LBU: case A_LHU: case A_LWR: case A_LL: case A_SC:
++    case A_MFC0: case A_CFC0: case A_MFIC:
++    case A_MFC1: case A_CFC1:
++    case A_MFV: case A_MFVC:
++        return in->rt == reg;
++    case A_JALR:
++        return in->rd == reg;
++    default:
++        return 0;
++    }
++}
++
++/* Track `lui rX, hi` up to 16 instructions, pairing every `addiu`/`ori` with
++ * `rs == rX` until `rX` is written or after a control transfer's delay slot. */
++static void scan_lui_pairs(const a_analysis *an, uint32_t lui_addr,
++                           uint8_t rx, int32_t hi,
++                           uint32_t sbase, uint32_t ssize,
++                           const uint32_t *owner, uint32_t want_owner,
++                           u32list *out) {
++    int stop_after_next = 0;
++    for (int k = 1; k <= 16; k++) {
++        uint32_t b = lui_addr + (uint32_t)k * 4;
++        if (!a_in_range(an, b)) break;
++        if (owner && owner[word_index(an, b)] != want_owner) break;
++        a_insn in2;
++        a_decode(fetch(an, b), b, &in2);
++        if ((in2.op == A_ADDIU || in2.op == A_ORI) && in2.rs == rx) {
++            uint32_t addr = (in2.op == A_ORI)
++                ? (((uint32_t)hi << 16) | (uint32_t)in2.imm)
++                : (((uint32_t)hi << 16) + (uint32_t)in2.imm);
++            if (a_in_range(an, addr) && !is_import_stub(an, addr) &&
++                addr - sbase < ssize) {
++                a_insn probe;
++                if (a_decode(fetch(an, addr), addr, &probe) && probe.op != A_INVALID)
++                    u32_push(out, addr);
++            }
++        }
++        if (stop_after_next) break;
++        if (insn_writes_gpr(&in2, rx)) break;
++        if (in2.has_delay_slot) stop_after_next = 1;
++        else if (in2.is_branch || in2.is_jump || in2.is_call ||
++                 in2.is_return || in2.is_indirect || in2.ends_block) break;
++    }
++}
++
+ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+     an->funcs = NULL; an->nfuncs = 0;
+     an->imports = NULL; an->nimports = 0;
+@@ -541,6 +604,7 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+     if (an->scan_calls && !an->skip_lui_scan) {
+         uint32_t sbase = an->scan_size ? an->scan_base : an->base;
+         uint32_t ssize = an->scan_size ? an->scan_size : an->size;
++        u32list lui_targets = { 0 };
+         for (uint32_t off = 0; off + 4 <= ssize; off += 4) {
+             uint32_t a = sbase + off;
+             if (!a_in_range(an, a)) continue;
+@@ -548,34 +612,18 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+             a_decode(fetch(an, a), a, &in);
+             if (in.op != A_LUI) continue;
+ 
+-            for (int k = 1; k <= 4; k++) {
+-                uint32_t b = a + (uint32_t)k * 4;
+-                if (!a_in_range(an, b)) break;
+-                a_insn in2;
+-                a_decode(fetch(an, b), b, &in2);
+-                if (in2.op == A_LUI && in2.rt == in.rt) break; /* overwritten first */
+-                if ((in2.op == A_ADDIU || in2.op == A_ORI) && in2.rs == in.rt) {
+-                    uint32_t addr = (in2.op == A_ORI)
+-                        ? (((uint32_t)in.imm << 16) | (uint32_t)in2.imm)
+-                        : (((uint32_t)in.imm << 16) + (uint32_t)in2.imm);
+-                    /* The target must be in the scanned range too, not just
+-                     * the image: lui+addiu builds far more data pointers than
+-                     * code pointers, and nearly any data word decodes. */
+-                    if (a_in_range(an, addr) && !is_import_stub(an, addr) &&
+-                        addr - sbase < ssize) {
+-                        a_insn probe;
+-                        if (a_decode(fetch(an, addr), addr, &probe) && probe.op != A_INVALID) {
+-                            uint32_t ti = word_index(an, addr);
+-                            if (!entry_map[ti]) {
+-                                entry_map[ti] = 1;
+-                                u32_push(&queue, addr);
+-                            }
+-                        }
+-                    }
+-                    break;
+-                }
++            lui_targets.n = 0;
++            scan_lui_pairs(an, a, in.rt, in.imm, sbase, ssize,
++                           NULL, A_NO_OWNER, &lui_targets);
++            for (int j = 0; j < lui_targets.n; j++) {
++                uint32_t ti = word_index(an, lui_targets.v[j]);
++                if (!entry_map[ti]) {
++                    entry_map[ti] = 1;
++                    u32_push(&queue, lui_targets.v[j]);
++                }
+             }
+         }
++        free(lui_targets.v);
+     }
+ 
+     a_func *funcs = NULL;
+@@ -615,27 +662,8 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+                 a_insn in;
+                 a_decode(fetch(an, a), a, &in);
+                 if (in.op != A_LUI) continue;
+-
+-                for (int k = 1; k <= 4; k++) {
+-                    uint32_t b = a + (uint32_t)k * 4;
+-                    if (!a_in_range(an, b)) break;
+-                    if (owner[word_index(an, b)] != owner[i]) break;
+-                    a_insn in2;
+-                    a_decode(fetch(an, b), b, &in2);
+-                    if (in2.op == A_LUI && in2.rt == in.rt) break;
+-                    if ((in2.op == A_ADDIU || in2.op == A_ORI) && in2.rs == in.rt) {
+-                        uint32_t addr = (in2.op == A_ORI)
+-                            ? (((uint32_t)in.imm << 16) | (uint32_t)in2.imm)
+-                            : (((uint32_t)in.imm << 16) + (uint32_t)in2.imm);
+-                        if (a_in_range(an, addr) && !is_import_stub(an, addr) &&
+-                            addr - sbase < ssize) {
+-                            a_insn probe;
+-                            if (a_decode(fetch(an, addr), addr, &probe) && probe.op != A_INVALID)
+-                                u32_push(&targets, addr);
+-                        }
+-                        break;
+-                    }
+-                }
++                scan_lui_pairs(an, a, in.rt, in.imm, sbase, ssize,
++                               owner, owner[i], &targets);
+             }
+         }
+         cross.n = 0;
