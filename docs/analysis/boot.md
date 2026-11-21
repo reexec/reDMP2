@@ -48,7 +48,13 @@ sequenceDiagram
     2. `BOOT.BIN`(`ET_EXEC`)에서 임포트 스텁 주소(`0x088C0540` 등)가 `is_import(an, target)`일 뿐 아니라 `an->funcs`에도 들어가 `is_function(an, target)`도 참이다(`dmp2_funcs_121.c:psp_func_088C0540`).
     3. 로컬 패치 `patches/psprecomp/0005-emit-trampoline.patch`에서 `emit_static_call_tail()`은 `is_import`를 먼저 검사해 `return;` 없이 `psp_import_088C0540();`만 출력하지만, 호출부(`emit.c` `in.is_jump` 경로)는 `if (!c->trampoline || !is_function(an, in.target))` 조건으로 `return;`을 생략한다. 두 조건이 겹쳐 `L_0882E618:`의 `psp_import_088C0540();` 뒤에 `return;`이 누락되고, C 제어 흐름이 바로 아래 `L_088312C8:` → `goto L_0882E618;`으로 폴스루(fall-through)하며 리프터가 합성한 무한 루프가 형성된다.
     4. 생성 코드 전체에서 `return;`이 누락된 `j <import>` 지점은 총 13곳이며, 나머지 12곳은 C 함수 끝(`}`) 직전이라 우연히 복귀하지만 `0x0882E618`만 뒤에 레이블(`L_088312C8`)이 이어져 무한 루프가 된다.
-  * **미확정**: `0005-emit-trampoline.patch`의 `return;` 누락을 수정하고 임포트 스텁이 `an->funcs`에 들어가는 경로를 정리한 뒤, `stream_sound_poll_thread`(`0x0882F0F8`) 시작 이후 다음 정지 지점이 무엇인지는 수정 후 측정으로 확인한다.
+  * **수정 후 측정 (`0009-tail-jump-import-return.patch` + `0010-exclude-import-stubs-from-funcs.patch`, **확인됨**)**:
+    * `0009`(꼬리 `j <import>` 항상 `return;` 출력)와 `0010`(`trace_function`/`a_discover`에서 `is_import_stub()` 필터링)을 적용해 재생성·빌드한 결과, 헤드리스 600 VBlank 실행에서 첫 프레임 뒤 멈춤이 완전히 해소되었다.
+    * **정지 분류 / 종료 코드**: `(e) VBlank limit reached (--max-vblanks)` / `0` (새 미구현 NID 없음, 디스패치 미스 `0`).
+    * **표시 프레임**: **`298` 프레임** (`interval mean=33.65 ms, max=83.46 ms`, `sceDisplayWaitVblankStart` 596회, `sceDisplaySetFrameBuf` 300회, `sceCtrlReadBufferPositive` 299회).
+    * **`sceKernelSetEventFlag` 호출 수**: `72,004,166`회 → **`300`회**.
+    * **부팅 진행**: `stream_sound_poll_thread`(`0x0882F0F8`)와 `soundThread`(`0x0882DF74`)가 정상 생성되고 `disc0:/PSP_GAME/USRDIR/movie/opening.pmf`(`480x272`) 오프닝 영상 재생에 진입해 600 VBlank 동안 `sceMpegAvcDecode` 302회, `sceMpegAtracDecode` 225회를 오류 없이 실행한다.
+  * **미확정**: 오프닝 영상 이후(또는 버튼 입력으로 스킵 후) 타이틀 화면·메뉴·플레이 경로에서 다음 미구현 NID나 정지 지점이 어디인지 추후 측정한다.
 * 참고: `redmp2` CLI는 `<game_directory>`를 첫 번째 위치 인자(`argv[1]`)로 받는다.
 
 ---
@@ -145,7 +151,8 @@ Running `redmp2.exe roms --headless --max-vblanks 600 --save-dir <temp>\save --c
   * Tracing via env-gated `REDMP2_TRACE_NID=0x1FB15A32` ([trap.c](../../src/recomp_abi/trap.c)) confirms every call has `$ra = 0x0882FB74` (`$sp = 0x09FBF400`, `$a0 = 0x11`, `$a1 = 0x2`, `v0 = 0`).
   * `0x0882FB6C` (in `psp_func_0882FB0C`, right after starting `sound_poll_thread` and right before creating `stream_sound_poll_thread` at `0x0882F0F8`) calls `jal 0x088312C8`. In original MIPS, `0x088312C8` loads event flag `0x11` from `0x08972158`, sets `$a1 = 2`, tail-jumps to `0x0882E618`, which tail-jumps to `0x088C0540` (`sceKernelSetEventFlag`) and returns once to `$ra = 0x0882FB74`. **There is no busy loop in the original guest code** (both hypotheses H1 and H2 are refuted).
   * **Confirmed root cause (lifter codegen bug)**: In `psp_body_088312C8`, `L_0882E618:` is emitted immediately before `L_088312C8:` (ascending address order). Because `BOOT.BIN` import stubs (`0x088C0540`, etc.) are both `is_import` and `is_function` (`an->funcs` contains `psp_func_088C0540`), `patches/psprecomp/0005-emit-trampoline.patch` triggers a mismatch: `emit_static_call_tail()` takes the `is_import` branch (emitting `psp_import_088C0540();` without `return;`), while the `in.is_jump` caller checks `if (!c->trampoline || !is_function(an, in.target))` and omits `return;`. C control flow falls straight through from `L_0882E618:` into `L_088312C8:` → `goto L_0882E618;`, creating a lifter-synthesized infinite loop. Across all generated code, 13 `j <import>` sites omit `return;`; 12 happen to precede `}` while `0x0882E618` is followed by `L_088312C8`.
-  * **Unresolved**: What happens once the missing `return;` in `0005-emit-trampoline.patch` is fixed and `stream_sound_poll_thread` (`0x0882F0F8`) starts will be measured in the follow-up fix step.
+  * **Post-fix measurement (`0009-tail-jump-import-return.patch` + `0010-exclude-import-stubs-from-funcs.patch`, **confirmed**)**: After regenerating with `0009` (always emitting `return;` after `j <import>`) and `0010` (filtering `is_import_stub()` in `trace_function()`/`a_discover()`), the stall is completely resolved. A 600-vblank headless run exits cleanly at `(e) VBlank limit reached` (exit code `0`, `0` dispatches, no new unimplemented NID), presenting **298 frames** (`mean=33.65 ms`, `sceDisplayWaitVblankStart` 596 calls, `sceDisplaySetFrameBuf` 300 calls, `sceCtrlReadBufferPositive` 299 calls), with `sceKernelSetEventFlag` dropping from `72,004,166` to **`300` calls**. The game starts `stream_sound_poll_thread` (`0x0882F0F8`) and `soundThread` (`0x0882DF74`) and plays `disc0:/PSP_GAME/USRDIR/movie/opening.pmf` (`sceMpegAvcDecode` 302 calls, `sceMpegAtracDecode` 225 calls).
+  * **Unresolved**: What happens after `opening.pmf` finishes (or is skipped) toward the title screen, menus, and gameplay will be measured next.
 
 ## 2. Static Import Coverage (`tools/import_coverage.py`, **confirmed**)
 

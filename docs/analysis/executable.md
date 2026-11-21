@@ -29,33 +29,34 @@
 
 ---
 
-## 2. 리프트(Lifting) 결과 (**확인됨**, 단계 B → issue #5 패치 `0007`·`0008` 갱신)
+## 2. 리프트(Lifting) 결과 (**확인됨**, 단계 B → issue #5 `0007`·`0008` → issue #6 `0009`·`0010` 갱신)
 
-`python scripts/recomp/regenerate.py --funcs-only roms` 및 `python scripts/recomp/regenerate.py roms` (`--trampoline`, `ET_EXEC` `--base` 생략, 패치 `0007` + `0008` 적용):
+`python scripts/recomp/regenerate.py` (`--trampoline`, `ET_EXEC` `--base` 생략, 패치 `0007`..`0010` 적용):
 
-| 지표 | issue #1 (`0007` 전) | issue #5 (`0007` 후) | issue #5 (`0008` 후) |
-|---|---:|---:|---:|
-| 코드 스캔 범위 | `0x08804000` + `843,552` B (`210,888` 명령어) | 동일 | 동일 |
-| 발견 함수 수 | `7,933` (124 `.c`, 127파일) | `8,007` (126 `.c`, 129파일) | **`8,014`** (126 `.c`, 129파일, `+7`) |
-| 내부 진입점 수 | `27,936` | `28,090` | **`28,110`** (`+20`) |
-| `.text` 커버리지 | `753,592 / 772,856` B (`97.5%`) | `758,836 / 772,856` B (`98.2%`) | **`759,300 / 772,856` B (`98.2%`, `+464` B)** |
-| 고유 임포트 호출 | `208` | `211` | **`211`** |
-| 간접 분기 / 점프 테이블 | 미해결 `0`, `355` → `4,560` | 미해결 `0`, `365` → `4,670` | 미해결 `0`, **`365` → `4,670`** |
-| 발견 명령어 수 | `188,398` (VFPU `84`, invalid `37`) | `189,709` (VFPU `84`, invalid `37`) | **`189,825`** (VFPU `84`, invalid `37`) |
-| 빌드 결과 (MSVC x64 Release) | 성공, 경고 0건 | 성공, 경고 0건 | 성공, **경고 0건** |
+| 지표 | issue #1 (`0007` 전) | issue #5 (`0007` 후) | issue #5 (`0008` 후) | issue #6 (`0009`+`0010` 후) |
+|---|---:|---:|---:|---:|
+| 코드 스캔 범위 | `0x08804000` + `843,552` B (`210,888` 명령어) | 동일 | 동일 | 동일 |
+| 발견 함수 수 | `7,933` (124 `.c`, 127파일) | `8,007` (126 `.c`, 129파일) | `8,014` (126 `.c`, 129파일) | **`7,978`** (125 `.c`, 128파일, `-36` 스텁 제거) |
+| 내부 진입점 수 | `27,936` | `28,090` | `28,110` | **`28,109`** (`-1`) |
+| `.text` 커버리지 | `753,592 / 772,856` B (`97.5%`) | `758,836 / 772,856` B (`98.2%`) | `759,300 / 772,856` B (`98.2%`) | **`759,000 / 772,856` B (`98.2%`, `-300` B)** |
+| 고유 임포트 호출 | `208` | `211` | `211` | **`211`** (`.sceStub.text` 내 함수 **`0`**개) |
+| 간접 분기 / 점프 테이블 | 미해결 `0`, `355` → `4,560` | 미해결 `0`, `365` → `4,670` | 미해결 `0`, `365` → `4,670` | 미해결 `0`, **`365` → `4,670`** |
+| 발견 명령어 수 | `188,398` (VFPU `84`, invalid `37`) | `189,709` (VFPU `84`, invalid `37`) | `189,825` (VFPU `84`, invalid `37`) | **`189,750`** (VFPU `84`, invalid `37`) |
+| 빌드 결과 (MSVC x64 Release) | 성공, 경고 0건 | 성공, 경고 0건 | 성공, 경고 0건 | 성공, **경고 0건** |
 
 * 패치 `0007`로 `user_main` 진입점 `0x0880FD20`(`psp_func_0880FD20`)이 리프트되었고, 패치 `0008`로 `.data` 내 C++ 정적 초기화자(`0x088D0BB8`)가 `lui+addiu`로 조립한 원소 생성자 `0x088832B8`(`psp_func_088832B8`)과 소멸자 `0x08883278`(`psp_func_08883278`)도 정상 리프트됨을 **확인됨**.
-* PRX 회귀 확인: `reDMP1`의 PRX `BOOT.BIN`에 같은 도구로 `funcs`를 실행한 결과 함수 수 **`9,024`**(`761,988` B, `92.5%`)로 패치 전과 완전히 동일(**확인됨**).
+* 패치 `0009`로 `j <import>` 13곳 모두에 `return;`이 출력되었고, 패치 `0010`으로 `.sceStub.text`(`0x088C03D0..0x088C0AF8`) 내 36개 가짜 스텁 함수가 `an->funcs`에서 완전히 제거됨을 **확인됨**.
+* PRX 회귀 확인(`reDMP1`, 읽기 전용): `reDMP1`의 PRX `BOOT.BIN`에 같은 도구로 `funcs`를 실행한 결과 함수 수는 `9,024` → **`9,004`**(`761,828` B, `92.5%`, `-20` 함수 / `-160` B = 8바이트 임포트 스텁 20개 제거). 또한 `reDMP1` 생성 코드의 `j <import>` 지점은 `0`건으로 `0009` 결함은 발생하지 않음을 **확인됨**.
 
 ---
 
-## 3. 정적 리프트 감사 (`tools/lift_audit.py`) (**확인됨**, issue #5 `0008` 갱신)
+## 3. 정적 리프트 감사 (`tools/lift_audit.py`) (**확인됨**, issue #6 `0009`+`0010` 갱신)
 
-`python tools/lift_audit.py --generated src/game/dmp2/recomp/generated --base 0x08804000`:
+`python tools/lift_audit.py`:
 
-* 감사 본문: `8,014`개 / `126`개 파일 (known thunks `36,124`)
-* Data misread as code: **`0`** (`0007` + `0008`로 추가된 81개 함수 중 데이터 오인 없음)
-* Mismatches: **`12`** (패치 전과 동일한 12건 — `j`로 `psp_import_*()` 꼬리 호출 직후 `void` 본문 종료)
+* 감사 본문: `7,978`개 / `125`개 파일 (known thunks `36,087`)
+* Data misread as code: **`0`**
+* Mismatches: **`0`** (이전 `12`건은 모두 `0009` 이전 `return;`이 누락되었던 `j <import>` 꼬리 호출이었으며 완전히 해소됨)
 * Tail-call-only cycles (SCCs): **`284`**개 (트램펄린 `--trampoline` 적용)
 
 ---
@@ -75,13 +76,13 @@ This document records confirmed ELF structure, module metadata, and Phase B lift
 
 `BOOT.BIN` (844,948 bytes, SHA-1 `1a5c904989d430588da9653acad4b6c5cdab2885`) is a plain ELF32 MIPS little-endian **`ET_EXEC` (`e_type = 2`)** fixed at `0x08804000`, with one `PT_LOAD` (`filesz = 0xCDF20`, `memsz = 0x626500`, `rwx`), entry `0x0880FC4C`, module `djmax` at `0x088C0D34`, `$gp = 0x088D9F10`, 2 exports, and 229 imports across 27 libraries. Unlike DMP1's relocatable PRX (`e_type = 0xFFA0`), `BOOT.BIN` is already linked at `0x08804000`, so `regenerate.py` omits `--base` and verifies `p_vaddr == lift.json base`.
 
-## 2. Lift Results (**confirmed**, updated in issue #5 with patches `0007` & `0008`)
+## 2. Lift Results (**confirmed**, updated in issue #6 with patches `0009` & `0010`)
 
-With local patches `0007-exec-scan-code-pointers.patch` (re-enabling `.text` `lui+addiu` pointer discovery on `ET_EXEC`) and `0008-exec-scan-outside-text-bodies.patch` (scanning discovered non-`.text` function bodies in the fixpoint loop), `allegrexrecomp emit --trampoline` (no `--base`) produced **8,014 functions** (+7 over `0007`, `28,110` interior entries, +20, `129` files), covering **759,300 / 772,856 bytes (98.2%)** (+464 B) of `.text`, with `211` distinct reached imports, `0` unresolved indirect jumps (`365` jump tables → `4,670` targets), `84` VFPU traps (`0.04%`), and `37` invalid words (`0.02%`). `0x0880FD20`, `0x088832B8`, and `0x08883278` are all lifted, and reDMP1's PRX `BOOT.BIN` stays unchanged at `9,024` functions. Release links cleanly with zero warnings.
+With patches `0007`..`0010`, `allegrexrecomp emit --trampoline` (no `--base`) produces **7,978 functions** (`-36` spurious `.sceStub.text` stub functions removed by `0010`; `28,109` interior entries, `125` `.c` chunks / `128` files), covering **759,000 / 772,856 bytes (98.2%)** of `.text`, with `211` distinct reached imports (`0` functions inside `.sceStub.text` `0x088C03D0..0x088C0AF8`), `0` unresolved indirect jumps (`365` jump tables → `4,670` targets), `84` VFPU traps (`0.04%`), and `37` invalid words (`0.02%`). All 13 `j <import>` tail-jump sites now emit `return;` (`0009`). On `reDMP1`'s PRX `BOOT.BIN` (read-only), `funcs` drops from `9,024` to `9,004` (`-20` stub functions / `-160` bytes), and `reDMP1`'s generated code has `0` `j <import>` sites. Release links cleanly with zero warnings.
 
 ## 3. Static Audit (`tools/lift_audit.py`, **confirmed**)
 
-Audited `8,014` bodies (`36,124` thunks): `0` data bodies misread as code, `284` tail-call SCCs (flat under `--trampoline`), and the same `12` `j` mismatches (tail jumps to `psp_import_*()` at the end of `void` bodies).
+Audited `7,978` bodies across `125` files (`36,087` thunks): `0` data bodies misread as code, **`0` mismatches** (all 12 earlier end-of-body `j <import>` mismatches resolved by `0009`), and `284` tail-call SCCs (flat under `--trampoline`).
 
 ## 4. Unresolved
 
