@@ -15,6 +15,8 @@ upstream이 받아들이면 해당 로컬 패치를 지우고 submodule을 올�
 | `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | 제출함. |
 | `0007-exec-scan-code-pointers.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | #36에 반영 필요, 미결정. |
 | `0008-exec-scan-outside-text-bodies.patch` | 없음 (로컬 전용) | 미제출 (`.text` 밖 발견 함수 본문의 `lui+addiu` 스캔). |
+| `0009-tail-jump-import-return.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | #37 후속 수정 (`0005`는 PR #37 그대로 유지). |
+| `0010-exclude-import-stubs-from-funcs.patch` | 없음 (로컬 전용) | 미제출 (`.sceStub.text`가 `a_in_range` 안에 있을 때 임포트 스텁이 `an->funcs`에 들어가는 문제 차단). |
 
 ## 패치
 
@@ -25,6 +27,8 @@ upstream이 받아들이면 해당 로컬 패치를 지우고 submodule을 올�
 5. **`0006-loop-hook.patch`** — `emit.c`가 내보내는 헤더에 `#ifdef PSPRECOMP_LOOP_HOOK` 분기를 추가해 `PSP_LOOP(a)`를 `psp_loop_hook(a)`로 연결한다.
 6. **`0007-exec-scan-code-pointers.patch`** — `0001`이 `an->image` 존재 시 `.text` `lui+addiu` 포인터 스캔을 일괄 생략해 `ET_EXEC`에서 코드 조립 함수 포인터가 누락되는 문제를 고친다(`skip_lui_scan` 플래그로 PRX 이미지에서만 생략).
 7. **`0008-exec-scan-outside-text-bodies.patch`** — `a_discover` 고정점 루프에서 `.text` 바깥에 이미 발견된 함수 본문(`.data` 내 C++ 정적 초기화자 등)의 `lui+addiu`/`ori` 쌍만 추가로 스캔해 `.text` 진입점으로 승격한다(`skip_lui_scan == 0`일 때만).
+8. **`0009-tail-jump-import-return.patch`** — `--trampoline` 모드에서 `j <import>` 꼬리 호출이 `is_import`와 `is_function`이 동시에 참일 때 `return;`을 생략해 다음 레이블로 폴스루하는 결함을 고친다.
+9. **`0010-exclude-import-stubs-from-funcs.patch`** — `trace_function()`(`in.is_branch`/`in.is_jump`)과 `a_discover()`(초기 시드·재탐색 타깃)에서 `is_import_stub()`을 걸러 `.sceStub.text` 주소가 `an->funcs`에 등록되지 않도록 한다.
 
 ---
 
@@ -45,3 +49,5 @@ When upstream accepts a patch, the matching local patch is removed and the submo
 | `0006-loop-hook.patch` | [sp00nznet/psprecomp#38](https://github.com/sp00nznet/psprecomp/pull/38) | Submitted. |
 | `0007-exec-scan-code-pointers.patch` | [sp00nznet/psprecomp#36](https://github.com/sp00nznet/psprecomp/pull/36) | Needs to go into #36, undecided. |
 | `0008-exec-scan-outside-text-bodies.patch` | None (local) | Not submitted (scans discovered non-`.text` function bodies for `lui+addiu` pointers when `skip_lui_scan == 0`). |
+| `0009-tail-jump-import-return.patch` | [sp00nznet/psprecomp#37](https://github.com/sp00nznet/psprecomp/pull/37) | Follow-up to #37 (`0005` kept equal to PR #37); always emit `return;` after `j <import>`. |
+| `0010-exclude-import-stubs-from-funcs.patch` | None (local) | Not submitted (filters `is_import_stub()` in `trace_function()` and `a_discover()` so `.sceStub.text` stubs never enter `an->funcs`). |

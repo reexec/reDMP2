@@ -53,6 +53,8 @@ set(ALLEGREXRECOMP_PATCHES
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0006-loop-hook.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0007-exec-scan-code-pointers.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0008-exec-scan-outside-text-bodies.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0009-tail-jump-import-return.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0010-exclude-import-stubs-from-funcs.patch"
 )
 
 foreach(patch IN LISTS ALLEGREXRECOMP_PATCHES)

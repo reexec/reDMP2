@@ -1,0 +1,31 @@
+From: reDMP2 <noreply@reexec.local>
+Subject: [PATCH] emit: always emit return after tail jump to an import stub
+
+In trampoline mode (--trampoline), emit_static_call_tail() checks is_import()
+before is_function() and emits `psp_import_XXXXXXXX();` without a `return;`,
+whereas `PSP_TAIL(psp_func_XXXXXXXX);` returns on its own.
+
+The `in.is_jump` emitter site (patched by 0005-emit-trampoline.patch) guarded
+its trailing `return;` with `if (!c->trampoline || !is_function(an, in.target))`.
+If an import stub address is also present in `an->funcs`, `return;` is omitted
+and C control flow falls through into the next label in the function body.
+
+Check `is_import(an, in.target)` so a tail jump to an import stub always emits
+`return;`. Other tail-call paths in emit.c either always emit `return;` or
+already handle `is_import` before `is_function`.
+---
+ tools/allegrexrecomp/emit.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/tools/allegrexrecomp/emit.c b/tools/allegrexrecomp/emit.c
+--- a/tools/allegrexrecomp/emit.c
++++ b/tools/allegrexrecomp/emit.c
+@@ -1079,7 +1079,7 @@ static void emit_function(ectx *c, const a_func *fn) {
+                 fprintf(f, "    goto L_%08X;\n", in.target);
+             } else {
+                 emit_static_call_tail(c, in.target);  /* tail call, and it must stay one */
+-                if (!c->trampoline || !is_function(an, in.target))
++                if (!c->trampoline || is_import(an, in.target) || !is_function(an, in.target))
+                     fprintf(f, "    return;\n");
+             }
+             if (have_slot && c->is_label[widx(an, a + 4)]) emit_slot_alias(c, a, &slot, 0);
