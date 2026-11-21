@@ -34,6 +34,13 @@ flowchart TD
 3. 생성 코드 포함 Release 빌드와 CTest, 헤드리스 실행(`--save-dir`/`--crash-dir`는 저장소 밖). 실행에 쓰는 repsp는 현재 submodule 작업 트리(repsp #67 브랜치)다. 그 사실을 작업 로그에 적는다.
 4. reDMP1의 `BOOT.BIN`(PRX)에 같은 도구로 `funcs`를 돌려 함수 수가 패치 전과 같은지 확인한다(읽기만, reDMP1 파일은 바꾸지 않음).
 
+## 6. 후속: `.text` 밖에서 발견된 함수 안의 포인터 (issue #5 후속, repsp #67에서 발견)
+
+* 패치 `0007` 뒤 부팅은 `0x088832B8`에서 디스패치 미스로 멈춘다(**확인됨**). 그 주소는 C++ 정적 초기화 함수 `0x088D0BB8`이 `lui $a1, 0x888` / `addiu $a1, $a1, 12984`로 만들어 배열 생성 도우미(`jal 0x0880410C`)에 원소 생성자로 넘긴다. 소멸자 `0x08883278`도 같은 방식이다.
+* `0x088D0BB8`은 섹션 헤더로는 `.data`(`0x088C1978..0x088D1F20`) 안에 있다. 다른 경로로 발견되어 lift됐지만, lui+addiu 스캔은 `[scan_base, scan_base + scan_size)`(=`.text`)만 선형으로 훑으므로 그 본문 안의 쌍을 보지 못한다(**확인됨**, coder 분석과 생성 코드 `dmp2_funcs_125.c`).
+* 수정(패치 `0008`, 또는 `0007`에 더함): `a_discover`의 고정점 반복에서 매 바퀴 끝에, 이미 발견된 함수 중 `.text` 밖에 있는 것의 **본문 명령만** lui+addiu 쌍으로 스캔해 새 진입점을 더한다. 새 진입점이 없으면 반복이 끝난다(기존 8바퀴 상한 유지). `.data` 전체를 선형으로 훑지 않는다. 데이터 워드를 명령으로 잘못 읽을 위험이 크기 때문이다. 대상은 `0007`과 같이 `skip_lui_scan`이 0인 경우(`ET_EXEC`)로 한정한다.
+* 측정과 검증은 §3·§5와 같다. 추가로 `0x088832B8`과 `0x08883278`이 lift되는지, `lift_audit.py`의 "Data misread as code"가 0인지 확인한다.
+
 ---
 
 # Design: finding code-built function pointers in an `ET_EXEC` (issue #5)
@@ -67,3 +74,10 @@ See the diagram above.
 2. After `regenerate.py`, compare functions, internal entries, `.text` coverage, jump tables and the `lift_audit.py` result with issue #1's values.
 3. Release with generated code, CTest and the headless run (`--save-dir`/`--crash-dir` outside the repository). The repsp used is the current submodule working tree (the repsp #67 branch); the work log says so.
 4. Run the same tool's `funcs` on reDMP1's `BOOT.BIN` (a PRX) and check the function count is unchanged (read only; no reDMP1 file changes).
+
+## 6. Follow-up: pointers inside functions found outside `.text` (issue #5 follow-up, found in repsp #67)
+
+* After patch `0007` the boot stops with a dispatch miss at `0x088832B8` (**confirmed**). That address is built by the C++ static initializer `0x088D0BB8` (`lui $a1, 0x888` / `addiu $a1, $a1, 12984`) and passed to an array-construction helper (`jal 0x0880410C`) as the element constructor; the destructor `0x08883278` is built the same way.
+* By its section headers `0x088D0BB8` lies inside `.data` (`0x088C1978..0x088D1F20`). It is found and lifted through other seeds, but the lui+addiu scan walks only `[scan_base, scan_base + scan_size)` (that is, `.text`) linearly, so pairs inside its body are never seen (**confirmed**, the coder's analysis and generated `dmp2_funcs_125.c`).
+* Fix (patch `0008`, or folded into `0007`): at the end of each round of `a_discover`'s fixpoint loop, scan **only the body instructions** of already discovered functions that lie outside `.text` for lui+addiu pairs and add the new entries; the loop ends when no entry is added (the existing cap of 8 rounds stays). `.data` is not scanned linearly, because data words read as instructions are too likely. Limited, like `0007`, to `skip_lui_scan == 0` (`ET_EXEC`).
+* Measurement and verification as in §3 and §5, plus: `0x088832B8` and `0x08883278` are lifted and `lift_audit.py`'s "Data misread as code" stays 0.

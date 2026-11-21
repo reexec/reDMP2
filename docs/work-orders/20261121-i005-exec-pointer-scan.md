@@ -10,6 +10,8 @@
 6. 문서: `docs/analysis/executable.md`(새 lift 수치), `docs/analysis/boot.md`(정지 지점 변화), 작업 로그 `docs/work-logs/20261121-i005-exec-pointer-scan.md`.
 7. `git status`(게임 데이터·생성 코드 없음) 확인 후 커밋. `third_party/repsp`의 submodule 변경(#67 브랜치)은 이 issue의 커밋에 넣지 않는다.
 
+8. 후속(설계 §6): `.text` 밖에서 발견된 함수 본문의 lui+addiu 스캔. 패치, 다시 lift, `lift_audit.py`, reDMP1 비교, 생성 코드 포함 빌드와 헤드리스 실행. 수치와 다음 정지를 작업 로그에 덧붙인다.
+
 금지: push, PR, 태그, issue. repsp·psprecomp·reDMP1 안의 수정. 업스트림 PR 작업.
 
 ---
@@ -19,5 +21,7 @@
 Design: [20261121-i005](../design/20261121-i005-exec-pointer-scan.md). Branch: `i005-exec-pointer-scan` (superproject). Commit titles end with `(#5)`.
 
 (1) `patches/psprecomp/0007-exec-scan-code-pointers.patch` (design §2), added wherever CMake (or the script) orders the patches; the `third_party/psprecomp` submodule is not edited (patches apply to the copy in the build directory). (2) `patches/psprecomp/README.md`: add 0007 to the patch list and the upstream table ("needs to go into #36, undecided"). (3) Win64 Debug/Release without generated code, with CTest. (4) Re-lift with `regenerate.py`, run `lift_audit.py`, compare with issue #1's values (design §3, §5 item 2); compare the `funcs` count of reDMP1's `BOOT.BIN` (design §5 item 4, read only). (5) Release with generated code, CTest, the headless run (`--save-dir`/`--crash-dir` outside the repository); record whether `0x0880FD20` is lifted and the next stop. (6) Documents: `docs/analysis/executable.md` (new lift numbers), `docs/analysis/boot.md` (the stop moving), the work log `docs/work-logs/20261121-i005-exec-pointer-scan.md`. (7) Check `git status` (no game data or generated code) and commit; the `third_party/repsp` submodule change (the #67 branch) does not go into this issue's commits.
+
+(8) Follow-up (design §6): the lui+addiu scan over the bodies of functions found outside `.text`: the patch, a re-lift, `lift_audit.py`, the reDMP1 comparison, the build with generated code and the headless run; append the numbers and the next stop to the work log.
 
 Not allowed: push, pull request, tag, issue; edits inside repsp, psprecomp or reDMP1; upstream PR work.
