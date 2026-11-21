@@ -55,6 +55,7 @@ set(ALLEGREXRECOMP_PATCHES
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0008-exec-scan-outside-text-bodies.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0009-tail-jump-import-return.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0010-exclude-import-stubs-from-funcs.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0011-lui-pair-reg-tracking.patch"
 )
 
 foreach(patch IN LISTS ALLEGREXRECOMP_PATCHES)
