@@ -1,21 +1,15 @@
+From eeb56370dcbd005bb5be3262399e7aae12da824c Mon Sep 17 00:00:00 2001
 From: reDMP2 <noreply@reexec.local>
-Subject: [PATCH] analyze: scan discovered non-.text function bodies for lui+addiu pointers
+Date: Sat, 21 Nov 2026 19:21:40 +0900
+Subject: [PATCH] analyze: scan discovered non-.text function bodies for
+ lui+addiu pointers
 
-In ET_EXEC binaries, C++ static initializers can be placed in .data outside
-.text (for example a .ctors routine that builds element constructor/destructor
-pointers with lui+addiu and passes them to an array-construction helper).
-a_discover's initial lui+addiu scan only walks [scan_base, scan_base+scan_size)
-(.text), so pointers built inside discovered non-.text bodies are missed.
-
-At the start of each fixpoint re-walk round (when scan_calls && !skip_lui_scan),
-scan only the body instructions (owner[i] != A_NO_OWNER) lying outside .text
-for lui+addiu/ori pairs targeting valid code inside .text, and promote them
-through the existing targets list without scanning raw .data linearly.
 ---
- tools/allegrexrecomp/analyze.c | 39 ++++++++++++++++++++++++++++++++++++++-
+ tools/allegrexrecomp/analyze.c | 39 +++++++++++++++++++++++++++++++++-
  1 file changed, 38 insertions(+), 1 deletion(-)
 
 diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
+index 1ffc94f..8b50a14 100644
 --- a/tools/allegrexrecomp/analyze.c
 +++ b/tools/allegrexrecomp/analyze.c
 @@ -594,13 +594,50 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
@@ -70,3 +64,6 @@ diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
          cross.n = 0;
          indirects.n = 0;
          int added = 0;
+-- 
+2.53.0.windows.2
+

@@ -1,24 +1,18 @@
+From 34f9d57dc7f6f1f9ce78cc9e0f1ef80d8d3ce537 Mon Sep 17 00:00:00 2001
 From: reDMP2 <noreply@reexec.local>
-Subject: [PATCH] analyze: use register tracking for lui+addiu/ori pointer pairing
+Date: Sat, 21 Nov 2026 19:21:41 +0900
+Subject: [PATCH] analyze: use register tracking for lui+addiu/ori pointer
+ pairing
 
-The fixed 4-instruction pairing window after `lui` misses valid code pointers
-when the compiler interleaves multiple `lui` instructions and argument setup
-before the paired `addiu`/`ori` (e.g. k=5 and k=6 in a `jal` delay slot).
-
-Extract a shared `scan_lui_pairs()` helper used by both the `.text` scan and
-patch 0008's discovered non-`.text` body scan (when `skip_lui_scan == 0`,
-leaving PRX handling untouched). Starting from `lui rX, hi`, walk up to 16
-instructions: emit every `addiu`/`ori` with `rs == rX` as a candidate `.text`
-entry (non-stub, valid instruction), and stop when `rX` is written, after a
-control transfer's delay slot, or at 16 instructions.
 ---
- tools/allegrexrecomp/analyze.c | 115 +++++++++++++++++++++++++----------------
- 1 file changed, 71 insertions(+), 44 deletions(-)
+ tools/allegrexrecomp/analyze.c | 125 +++++++++++++++++++++------------
+ 1 file changed, 79 insertions(+), 46 deletions(-)
 
 diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
+index 690e73f..b0ed437 100644
 --- a/tools/allegrexrecomp/analyze.c
 +++ b/tools/allegrexrecomp/analyze.c
-@@ -458,6 +458,73 @@ static int cmp_func(const void *a, const void *b) {
+@@ -460,6 +460,73 @@ static int cmp_func(const void *a, const void *b) {
      return (x > y) - (x < y);
  }
  
@@ -92,7 +86,7 @@ diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
  int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
      an->funcs = NULL; an->nfuncs = 0;
      an->imports = NULL; an->nimports = 0;
-@@ -541,6 +604,7 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+@@ -541,6 +608,7 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
      if (an->scan_calls && !an->skip_lui_scan) {
          uint32_t sbase = an->scan_size ? an->scan_base : an->base;
          uint32_t ssize = an->scan_size ? an->scan_size : an->size;
@@ -100,7 +94,7 @@ diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
          for (uint32_t off = 0; off + 4 <= ssize; off += 4) {
              uint32_t a = sbase + off;
              if (!a_in_range(an, a)) continue;
-@@ -548,34 +612,18 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+@@ -548,34 +616,18 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
              a_decode(fetch(an, a), a, &in);
              if (in.op != A_LUI) continue;
  
@@ -129,7 +123,6 @@ diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
 -                        }
 -                    }
 -                    break;
--                }
 +            lui_targets.n = 0;
 +            scan_lui_pairs(an, a, in.rt, in.imm, sbase, ssize,
 +                           NULL, A_NO_OWNER, &lui_targets);
@@ -138,14 +131,14 @@ diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
 +                if (!entry_map[ti]) {
 +                    entry_map[ti] = 1;
 +                    u32_push(&queue, lui_targets.v[j]);
-+                }
+                 }
              }
          }
 +        free(lui_targets.v);
      }
  
      a_func *funcs = NULL;
-@@ -615,27 +662,8 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
+@@ -615,27 +667,8 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
                  a_insn in;
                  a_decode(fetch(an, a), a, &in);
                  if (in.op != A_LUI) continue;
@@ -175,3 +168,6 @@ diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
              }
          }
          cross.n = 0;
+-- 
+2.53.0.windows.2
+

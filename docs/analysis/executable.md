@@ -29,9 +29,9 @@
 
 ---
 
-## 2. 리프트(Lifting) 결과 (**확인됨**, 단계 B → issue #5 `0007`·`0008` → issue #6 `0009`·`0010` → issue #9 `0011` 갱신)
+## 2. 리프트(Lifting) 결과 (**확인됨**, 단계 B → issue #5 `0007`·`0008` → issue #6 `0009`·`0010` → issue #9 `0011` → issue #10 `psprecomp v0.6.0` 갱신)
 
-`python scripts/recomp/regenerate.py` (`--trampoline`, `ET_EXEC` `--base` 생략, 패치 `0007`..`0011` 적용):
+`python scripts/recomp/regenerate.py` (`--trampoline`, `ET_EXEC` `--base` 생략, `psprecomp v0.6.0` `14749c1` + 로컬 패치 `0005`·`0007`..`0011` 적용; 수치는 `v0.0.5`와 동일):
 
 | 지표 | issue #1 (`0007` 전) | issue #5 (`0008` 후) | issue #6 (`0009`+`0010` 후, v0.0.4) | issue #9 (`0011` 후) |
 |---|---:|---:|---:|---:|
@@ -77,9 +77,9 @@ This document records confirmed ELF structure, module metadata, and Phase B lift
 
 `BOOT.BIN` (844,948 bytes, SHA-1 `1a5c904989d430588da9653acad4b6c5cdab2885`) is a plain ELF32 MIPS little-endian **`ET_EXEC` (`e_type = 2`)** fixed at `0x08804000`, with one `PT_LOAD` (`filesz = 0xCDF20`, `memsz = 0x626500`, `rwx`), entry `0x0880FC4C`, module `djmax` at `0x088C0D34`, `$gp = 0x088D9F10`, 2 exports, and 229 imports across 27 libraries. Unlike DMP1's relocatable PRX (`e_type = 0xFFA0`), `BOOT.BIN` is already linked at `0x08804000`, so `regenerate.py` omits `--base` and verifies `p_vaddr == lift.json base`.
 
-## 2. Lift Results (**confirmed**, updated in issue #9 with patch `0011`)
+## 2. Lift Results (**confirmed**, updated in issue #10 with `psprecomp v0.6.0` `14749c1`)
 
-With patches `0007`..`0011`, `allegrexrecomp emit --trampoline` (no `--base`) produces **7,982 functions** (`+4` over v0.0.4's `7,978`, including `0x08817218` and `0x08817228`; `28,109` interior entries, `125` `.c` chunks / `128` files), covering **759,072 / 772,856 bytes (98.2%, `+72` B)** of `.text`, with `211` distinct reached imports (`0` functions inside `.sceStub.text` `0x088C03D0..0x088C0AF8`), `0` unresolved indirect jumps (`365` jump tables → `4,670` targets), `189,768` instructions (`+18`), `84` VFPU traps (`0.04%`), and `37` invalid words (`0.02%`). On `reDMP1`'s PRX `BOOT.BIN` (read-only), `funcs` stays unchanged at `9,004` (`761,828` B, `92.5%`). Release links cleanly with zero warnings.
+With `psprecomp v0.6.0` (`14749c1`) and local patches `0005`, `0007`..`0011`, `allegrexrecomp emit --trampoline` (no `--base`) produces the exact same numbers as v0.0.5: **7,982 functions** (`+4` over v0.0.4's `7,978`, including `0x08817218` and `0x08817228`; `28,109` interior entries, `125` `.c` chunks / `128` files), covering **759,072 / 772,856 bytes (98.2%, `+72` B)** of `.text`, with `211` distinct reached imports (`0` functions inside `.sceStub.text` `0x088C03D0..0x088C0AF8`), `0` unresolved indirect jumps (`365` jump tables → `4,670` targets), `189,768` instructions (`+18`), `84` VFPU traps (`0.04%`), and `37` invalid words (`0.02%`). On `reDMP1`'s PRX `BOOT.BIN` (read-only), `funcs` stays unchanged at `9,004` (`761,828` B, `92.5%`). Release links cleanly with zero warnings.
 
 ## 3. Static Audit (`tools/lift_audit.py`, **confirmed**)
 

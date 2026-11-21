@@ -10,7 +10,7 @@
 |---|---|---|
 | `cpu.c` | `psp_cpu_t psp_cpu`<br/>`psp_cpu_init`, `psp_cpu_reset`<br/>`repsp_recomp_register_cpu` | 레지스터 파일(`r0..r31`, `pc`, `hi`, `lo`, `f0..f31`, `v000..v777`)을 정의하고, repsp의 `repsp_guest_cpu_ops`(`save`, `restore`, `get_gpr`, `set_gpr`, `call_guest`)를 구현하여 런타임에 등록. |
 | `mem.c` | `psp_read8/16/32/64`<br/>`psp_write8/16/32/64`<br/>`psp_mem_ptr` | C-호출 가능한 `repsp_guest_read*`, `repsp_guest_write*`, `repsp_guest_translate`를 직접 호출. based 모델의 가상 메모리 변환과 미러링을 온전히 상속. |
-| `dispatch.c` | `psp_dispatch_register`<br/>`psp_dispatch_call`<br/>`psp_dispatch_calls` | 게스트 주소 -> 재컴파일된 C 함수 포인터 디스패치 테이블 관리 (동적 간접 점프 처리). |
+| `dispatch.c` | `psp_register`, `psp_lookup`<br/>`psp_dispatch`, `psp_dispatch_tail`<br/>`psp_run`, `psp_call_guest_fn`, `psp_call_guest_addr`<br/>`psp_call_from_host`, `psp_ra_is_jump` | 게스트 주소 -> 재컴파일된 C 함수 포인터 디스패치 테이블, 트램펄린(`psp_run`), 게스트 호출 프레임 관리(`psp_call_guest_fn`/`psp_call_guest_addr`). |
 | `trap.c` | `psp_hle_call`<br/>`psp_syscall`<br/>`psp_unimplemented` | NID 호출을 `repsp_recomp_hle_call(nid)`로 전달. |
 | `trace.c` | `psp_trace_*`<br/>`recomp_abi_trace_summary` | 선택적 게스트 진입·스택 균형·호스트 스택 최고치 진단 (`REDMP2_TRACE_GUEST`). |
 | `exec_trace.cpp` | `redmp2_note_guest_entry` | `repsp::runtime::NoteGuestEntry` 브리지. |
@@ -30,7 +30,7 @@ This directory hosts the adapter library (`redmp2_recomp_abi`) connecting the `p
 |---|---|---|
 | `cpu.c` | `psp_cpu_t psp_cpu`<br/>`psp_cpu_init`, `psp_cpu_reset` | Defines the guest CPU context and registers `repsp_guest_cpu_ops` callbacks (`save`, `restore`, `get_gpr`, `set_gpr`, `call_guest`) with repsp. |
 | `mem.c` | `psp_read8/16/32/64`<br/>`psp_write8/16/32/64`<br/>`psp_mem_ptr` | Dispatches memory accesses directly to `repsp_guest_read*`, `repsp_guest_write*`, and `repsp_guest_translate`. |
-| `dispatch.c` | `psp_dispatch_register`<br/>`psp_dispatch_call`<br/>`psp_dispatch_calls` | Manages address-to-function dispatch table for indirect jumps. |
+| `dispatch.c` | `psp_register`, `psp_lookup`<br/>`psp_dispatch`, `psp_dispatch_tail`<br/>`psp_run`, `psp_call_guest_fn`, `psp_call_guest_addr`<br/>`psp_call_from_host`, `psp_ra_is_jump` | Manages the address-to-function dispatch table, trampoline (`psp_run`), and guest call frame wrappers (`psp_call_guest_fn`/`psp_call_guest_addr`). |
 | `trap.c` | `psp_hle_call`<br/>`psp_syscall`<br/>`psp_unimplemented` | Forwards import calls to `repsp_recomp_hle_call`. |
 | `trace.c` | `psp_trace_*`<br/>`recomp_abi_trace_summary` | Optional guest entry, SP balance, and host stack high-water diagnostics (`REDMP2_TRACE_GUEST`). |
 | `exec_trace.cpp` | `redmp2_note_guest_entry` | Bridge to `repsp::runtime::NoteGuestEntry`. |

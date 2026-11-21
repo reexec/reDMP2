@@ -6,7 +6,7 @@ reDMP2는 다음 서드파티 오픈소스 프로젝트를 포함하거나 링�
 
 * 위치: `third_party/psprecomp` (submodule) 및 `src/recomp_abi/` (일부 코드 이식)
 * 업스트림: https://github.com/sp00nznet/psprecomp
-* 고정점: `5ca18fa`
+* 고정점: `14749c1` (v0.6.0)
 * 라이선스: MIT License (Copyright (c) 2024 sp00nznet)
 * 용도: 정적 재컴파일 툴킷(`allegrexrecomp` 호스트 CLI 도구 및 ABI 헤더), `src/vfpu.c` 및 `src/dispatch.c` 일부를 `src/recomp_abi/`에 포함.
 
@@ -54,7 +54,7 @@ reDMP2 incorporates or links the following third-party open-source projects. The
 
 * Location: `third_party/psprecomp` (submodule) and `src/recomp_abi/` (carried code)
 * Upstream: https://github.com/sp00nznet/psprecomp
-* Pin: `5ca18fa`
+* Pin: `14749c1` (v0.6.0)
 * License: MIT License (Copyright (c) 2024 sp00nznet)
 * Usage: Static recompilation toolkit (`allegrexrecomp` host CLI tool and ABI headers); portions of `src/vfpu.c` and `src/dispatch.c` carried into `src/recomp_abi/`.
 

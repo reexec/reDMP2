@@ -1,28 +1,16 @@
+From 099a885f3149a69cdf923fa282b011fd546c1aca Mon Sep 17 00:00:00 2001
 From: reDMP2 <noreply@reexec.local>
-Subject: [PATCH] analyze/emit: exclude import stubs from funcs and register psp_import_* in dispatch
+Date: Sat, 21 Nov 2026 19:21:41 +0900
+Subject: [PATCH] analyze/emit: exclude import stubs from funcs and register
+ psp_import_* in dispatch
 
-Upstream analyze.c assumed the import stub section (.sceStub.text) lies outside
-a_in_range(an, ...), so trace_function() (in.is_branch / in.is_jump) and
-a_discover() (initial seeds and fixpoint re-walk targets) checked a_in_range()
-without checking !is_import_stub().
-
-When an->size covers the full PT_LOAD segment (as in fixed-address ET_EXEC
-images), .sceStub.text is inside a_in_range(). Tail jumps (`j <import>`) and
-data-pointer seeds pointing into .sceStub.text then promote import stub
-addresses into `an->funcs`, emitting dummy `jr $ra; nop` functions and
-registering them in the dispatch table.
-
-Filter `is_import_stub(an, ...)` at all four entry/target sites in analyze.c so
-import stubs are only ever recorded in `an->imports` and never in `an->funcs`,
-and register every `an->imports[i]` in `psp_recomp_register()` pointing at
-`psp_import_XXXXXXXX` so indirect calls (`jalr`) to an import stub address
-dispatch cleanly to the HLE.
 ---
  tools/allegrexrecomp/analyze.c | 8 ++++----
  tools/allegrexrecomp/emit.c    | 3 +++
  2 files changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
+index 8b50a14..690e73f 100644
 --- a/tools/allegrexrecomp/analyze.c
 +++ b/tools/allegrexrecomp/analyze.c
 @@ -205,7 +205,7 @@ static int trace_function(walk_ctx *c, uint32_t entry, a_func *out) {
@@ -62,9 +50,10 @@ diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
              if (entry_map[ti]) continue;
              entry_map[ti] = 1;
 diff --git a/tools/allegrexrecomp/emit.c b/tools/allegrexrecomp/emit.c
+index 9555aec..18c075b 100644
 --- a/tools/allegrexrecomp/emit.c
 +++ b/tools/allegrexrecomp/emit.c
-@@ -1490,6 +1490,9 @@ int a_emit(const a_analysis *an, const emit_opts *o) {
+@@ -1539,6 +1539,9 @@ int a_emit(const a_analysis *an, const emit_opts *o) {
      for (i = 0; i < an->nfuncs; i++)
          fprintf(of.f, "    psp_register(0x%08Xu, psp_func_%08X);\n",
                  an->funcs[i].addr, an->funcs[i].addr);
@@ -74,3 +63,6 @@ diff --git a/tools/allegrexrecomp/emit.c b/tools/allegrexrecomp/emit.c
      /* Interior labels last, so a real function entry always wins a collision. */
      for (i = 0; i < c.nentries; i++)
          fprintf(of.f, "    psp_register_label(0x%08Xu, psp_at_%08X);\n",
+-- 
+2.53.0.windows.2
+
