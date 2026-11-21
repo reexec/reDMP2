@@ -78,6 +78,27 @@ ctest --test-dir build/win64-release -C Release --output-on-failure
 
 ---
 
+## 4. 후속 (단계 8, 설계 §6): `.text` 밖 발견 함수 본문의 `lui+addiu` 스캔 (`0008`)
+
+* **패치 선택**: `0007`(PR #36 회귀 수정)과 역할을 분리해 별도 패치 `patches/psprecomp/0008-exec-scan-outside-text-bodies.patch`로 추가했습니다. `a_discover` 고정점 루프의 `round > 0` 분기에서 `scan_calls && !skip_lui_scan`일 때 `owner[i] != A_NO_OWNER`이면서 `.text` 바깥에 있는 본문 명령어만 `lui+addiu`/`ori` 쌍으로 스캔해 `.text` 진입점으로 승격합니다(`.data` 선형 스캔 없음).
+* **`0007` 대비 리프트·감사 변화 (**확인됨**)**:
+  * 함수 수: `8,007` → **`8,014`** (`+7`)
+  * 내부 진입점: `28,090` → **`28,110`** (`+20`)
+  * `.text` 도달: `758,836` B → **`759,300` B** (`98.2%`, `+464` B)
+  * 명령어: `189,709` → **`189,825`** (`+116`), VFPU `84` / invalid `37` 불변
+  * 점프 테이블: `365` → **`365`** (`4,670` 타깃, 미해결 `0`)
+  * `lift_audit` Data misread as code: **`0`** (Mismatches `12`, SCCs `284` 불변)
+  * `0x088832B8` (`psp_func_088832B8`) 및 `0x08883278` (`psp_func_08883278`): **모두 리프트 확인**
+  * `reDMP1` PRX 함수 수: **`9,024`** (완전 불변)
+* **생성 코드 포함 Release 빌드·CTest·헤드리스 부트 (`repsp` #67 `5e69d39` 사용, **확인됨**)**:
+  * 빌드 경고 **0건**, CTest **31/32 통과** (`app_lift_check` 통과, `app_smoke_registered_roms`는 아래 미구현 NID 정지).
+  * 헤드리스 실행(`--save-dir`/`--crash-dir` 임시 경로): `0x088832B8` 디스패치 미스를 통과하고 `sceDisplaySetMode`(2회), `sceGe` 2 리스트(289 명령, 2 finish), `scePowerRegisterCallback`, `sceUmdActivate`/`GetDriveStat`, `sceUtilityLoadAvModule`(3회)까지 진행한 뒤 다음 미구현 NID에서 정지:
+    * **정지 분류**: `(b) Unimplemented kernel NID`
+    * **라이브러리 / NID**: `ThreadManForUser:sceKernelCreateVpl (0x56C039B5)`
+    * **종료 코드**: `10` (디스패치 `0`, 표시 `0`프레임)
+
+---
+
 # Work Log: Restore `.text` `lui+addiu` Pointer Scan on `ET_EXEC` (issue #5)
 
 * Issue: [#5](https://github.com/reexec/reDMP2/issues/5)
@@ -105,3 +126,9 @@ ctest --test-dir build/win64-release -C Release --output-on-failure
 * **Win64 Debug & Release without generated code**: **31/31 CTest passed** in both (30/30 CI tests + local `roms/` identification test), 0 warnings on `redmp2`/`repsp` targets.
 * **Win64 Release with generated code**: 0 warnings, **31/32 CTest passed** (`app_lift_check` passed; `app_smoke_registered_roms` failed on the next unimplemented NID).
 * **Headless boot (`--save-dir`/`--crash-dir` outside repo)**: Entered `user_main` (`0x0880FD20`), allocated `UserSbrk` (598,016 B at `0x08E2B000`), and stopped at `(b) Unimplemented kernel NID`, `ModuleMgrForUser:sceKernelGetModuleIdByAddress (0xD8B73127)`, exit code `10` (`0` dispatches, `0` frames).
+
+## 4. Follow-up (Step 8, Design §6): Non-`.text` Discovered Body `lui+addiu` Scan (`0008`)
+
+* **Patch choice**: Added as a separate patch `patches/psprecomp/0008-exec-scan-outside-text-bodies.patch` (keeping `0007` scoped to the PR #36 regression). In `a_discover`'s fixpoint loop (`round > 0`), when `scan_calls && !skip_lui_scan`, scans only `owner[i] != A_NO_OWNER` body instructions outside `.text` for `lui+addiu`/`ori` pairs targeting `.text` (no linear `.data` scan).
+* **Delta vs. after-`0007` (**confirmed**)**: functions `8,007` → **`8,014`** (+7), interior entries `28,090` → **`28,110`** (+20), `.text` reached `758,836` → **`759,300` B** (`98.2%`, +464 B), jump tables `365` → `365` (`4,670` targets), `lift_audit` Data misread **`0`**, `psp_func_088832B8` & `psp_func_08883278` both lifted, `reDMP1` PRX unchanged at **`9,024`** functions.
+* **Release with generated code (`repsp` #67 `5e69d39`, **confirmed**)**: 0 warnings, **31/32 CTest passed** (`app_lift_check` passed). Headless boot passes C++ static init, `sceDisplaySetMode` (2), `sceGe` (2 lists, 289 commands, 2 finishes), `scePowerRegisterCallback`, `sceUmdActivate`/`GetDriveStat`, and `sceUtilityLoadAvModule` (3), stopping at `(b) Unimplemented kernel NID`, `ThreadManForUser:sceKernelCreateVpl (0x56C039B5)`, exit code `10`.
