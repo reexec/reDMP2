@@ -4,9 +4,9 @@
 
 | 문서 | 내용 |
 |---|---|
-| `disc-image.md` (작성 예정) | ULKS-46116 원본 UMD의 신원(redump #33115)과 구성 |
-| `executable.md` (작성 예정) | 원본 실행 파일(`BOOT.BIN`/`EBOOT.BIN`) 분석, 세그먼트, NID, 함수 커버리지 |
-| `boot.md` (작성 예정) | 첫 부팅 측정 결과, 정지 분류 및 미구현 import 목록 |
+| [disc-image.md](disc-image.md) | ULKS-46116 원본 UMD의 신원(redump #33115)과 파일 구성 |
+| [executable.md](executable.md) | 원본 실행 파일(`BOOT.BIN`, `ET_EXEC`) 구조, 세그먼트, 리프트 커버리지(97.5%) 및 `lift_audit.py` 결과 |
+| [boot.md](boot.md) | 첫 부팅 측정(`LoadPrx` `ET_EXEC` 거부) 및 `tools/import_coverage.py` 정적 임포트 커버리지(141/229) |
 
 ---
 
@@ -16,6 +16,6 @@ Findings from the original disc and executable, by topic, marked **confirmed**, 
 
 | Document | Contents |
 |---|---|
-| `disc-image.md` (planned) | Identity (redump #33115) and layout of the original ULKS-46116 UMD |
-| `executable.md` (planned) | Analysis of original executables (`BOOT.BIN`/`EBOOT.BIN`), segments, NIDs, function coverage |
-| `boot.md` (planned) | First boot measurement results, stop class, and unimplemented import list |
+| [disc-image.md](disc-image.md) | Identity (redump #33115) and file layout of the original ULKS-46116 UMD |
+| [executable.md](executable.md) | Structure of `BOOT.BIN` (`ET_EXEC`), segments, lift coverage (97.5%), and `lift_audit.py` summary |
+| [boot.md](boot.md) | First boot measurement (`LoadPrx` `ET_EXEC` rejection) and `tools/import_coverage.py` static import coverage (141/229) |
