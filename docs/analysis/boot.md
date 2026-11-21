@@ -32,7 +32,12 @@ sequenceDiagram
   * **라이브러리 / NID**: `SysMemUserForUser` / `0x7591C7DB` (`sceKernelSetCompiledSdkVersion`)
   * **종료 코드**: `10`
   * **디스패치 / 프레임**: 디스패치 `0`회, 표시 `0`프레임 (`VBlank = 0`, `GE lists = 0`, `Audio output_calls = 0`)
-* **로컬 CTest 상태 (**확인됨**)**: 생성 코드 포함 Release 빌드 기준 **31/32 통과, 1 실패**(`app_lift_check` 통과, `app_smoke_registered_roms`는 위 미구현 NID 정지로 실패). 생성 코드 없는 Win64 Debug/Release 빌드는 **30/30 통과**.
+* **로컬 CTest 상태 (**확인됨**)**: 생성 코드 포함 Release 빌드 기준 **31/32 통과, 1 실패**(`app_lift_check` 통과, `app_smoke_registered_roms`는 위 미구현 NID 정지로 실패). 생성 코드 없는 Win64 Debug/Release 빌드는 **30/30 통과** (로컬 `roms/` 포함 시 31/31).
+* **issue #5 (`0007-exec-scan-code-pointers.patch`) + `repsp` #67 작업 트리(`43ac495`) 측정 (**확인됨**)**:
+  * `repsp` #67의 `SysMemUserForUser` 4개 함수(`sceKernelSetCompiledSdkVersion`, `sceKernelSetCompilerVersion`, `sceKernelMaxFreeMemSize`, `sceKernelTotalFreeMemSize`)와 패치 `0007`로 `0x0880FD20`(`user_main`)이 리프트된 뒤, 헤드리스 실행(`--save-dir`/`--crash-dir` 임시 경로)은 `module_start` → `user_main` 진입 및 `UserSbrk`(598,016 B @ `0x08E2B000`) 할당까지 통과하고 다음 미구현 NID에서 정지한다:
+    * **정지 분류**: `(b) Unimplemented kernel NID`
+    * **라이브러리 / NID**: `ModuleMgrForUser:sceKernelGetModuleIdByAddress (0xD8B73127)`
+    * **종료 코드**: `10` (디스패치 `0`, 표시 `0`프레임)
 * **이전 기록 (issue #1, `repsp` `7f856eb`)**: `ET_EXEC` 미지원으로 `LoadPrx failed: Unsupported ELF type (expected PRX e_type 0xFFA0)`(종료 코드 `1`, CTest 30/32)에서 정지했으나, `repsp v0.0.30`([reexec/repsp#65](https://github.com/reexec/repsp/issues/65))의 `ET_EXEC` 로드 지원으로 해소되었다.
 * 참고: `redmp2` CLI는 `<game_directory>`를 첫 번째 위치 인자(`argv[1]`)로 받는다.
 
@@ -123,7 +128,8 @@ Running `redmp2.exe roms --headless --max-vblanks 600 --save-dir <temp>\save --c
 * **Library / NID**: `SysMemUserForUser` / `0x7591C7DB` (`sceKernelSetCompiledSdkVersion`)
 * **Exit code**: `10`
 * **Counters**: `0` dispatches, `0` frames presented (`VBlank = 0`, `GE lists = 0`, `Audio output_calls = 0`).
-* **Local CTest (**confirmed**)**: Release with generated code passes **31/32** (`app_lift_check` now passes; `app_smoke_registered_roms` fails on this unimplemented NID and is kept enabled). Win64 Debug/Release without generated code pass **30/30**.
+* **Local CTest (**confirmed**)**: Release with generated code passes **31/32** (`app_lift_check` now passes; `app_smoke_registered_roms` fails on this unimplemented NID and is kept enabled). Win64 Debug/Release without generated code pass **30/30** (31/31 locally when `roms/` is present).
+* **Issue #5 (`0007-exec-scan-code-pointers.patch`) with `repsp` #67 working tree (`43ac495`, **confirmed**)**: Once `0x0880FD20` (`user_main`) is lifted alongside `repsp` #67's `SysMemUserForUser` additions, the headless run enters `user_main`, allocates `UserSbrk` (598,016 B at `0x08E2B000`), and advances to the next unimplemented NID: `(b) Unimplemented kernel NID`, `ModuleMgrForUser:sceKernelGetModuleIdByAddress (0xD8B73127)`, exit code `10` (`0` dispatches, `0` frames).
 
 ## 2. Static Import Coverage (`tools/import_coverage.py`, **confirmed**)
 

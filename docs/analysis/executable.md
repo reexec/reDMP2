@@ -29,34 +29,36 @@
 
 ---
 
-## 2. 리프트(Lifting) 결과 (**확인됨**, 단계 B)
+## 2. 리프트(Lifting) 결과 (**확인됨**, 단계 B → issue #5 갱신)
 
-`python scripts/recomp/regenerate.py --funcs-only roms` 및 `python scripts/recomp/regenerate.py roms` (`--trampoline`, `ET_EXEC` `--base` 생략):
+`python scripts/recomp/regenerate.py --funcs-only roms` 및 `python scripts/recomp/regenerate.py roms` (`--trampoline`, `ET_EXEC` `--base` 생략, 패치 `0007-exec-scan-code-pointers.patch` 적용):
 
-| 지표 | 값 |
-|---|---|
-| 코드 스캔 범위 | `0x08804000` + `843,552` 바이트 (`210,888` 명령어) |
-| 시드(seeds) | `2,349` (entry `0x0880FC4C` + exports `2` + data pointer 휴리스틱 스캔 `2,346`) |
-| 발견 함수 수 | **`7,933`** (`dmp2_funcs_000..123.c`, 총 127개 생성 파일) |
-| 내부 진입점 수 | **`27,936`** |
-| `.text` 커버리지 | **`753,592 / 772,856` 바이트 (97.5%)** |
-| 고유 임포트 호출 | `208`개 (`229`개 선언 중 도달 208개) |
-| 간접 분기 | 미해결 `0`, 점프 테이블 `355`개 → `4,560`개 타깃 해석 |
-| 발견 명령어 수 | `188,398` (VFPU `84`개 `0.04%` 트랩 방출, invalid `37`개 `0.02%`) |
-| 함수 형태 | `touch vfpu` 32 (`0.4%`), `no jr $ra` 4,278, `computed jumps` 272, `scattered` 196, 최대 함수 `0x088CF73C` (4,220 B) |
-| 빌드 결과 (MSVC x64 Debug/Release) | `redmp2_recomp.lib` + `redmp2.exe` 컴파일·링크 성공, **경고 0건** |
+| 지표 | issue #1 (패치 `0007` 전) | issue #5 (패치 `0007` 후) | 변화 |
+|---|---:|---:|---:|
+| 코드 스캔 범위 | `0x08804000` + `843,552` B (`210,888` 명령어) | 동일 | — |
+| 시드(seeds) | `2,349` (entry `0x0880FC4C` + exports `2` + data 휴리스틱 `2,346`) | 동일 (`lui+addiu` 스캔은 discovery 내부) | — |
+| 발견 함수 수 | `7,933` (`dmp2_funcs_000..123.c`, 127파일) | **`8,007`** (`dmp2_funcs_000..125.c`, 129파일) | **`+74`** |
+| 내부 진입점 수 | `27,936` | **`28,090`** | **`+154`** |
+| `.text` 커버리지 | `753,592 / 772,856` B (`97.5%`) | **`758,836 / 772,856` B (`98.2%`)** | **`+5,244` B (`+0.7%p`)** |
+| 고유 임포트 호출 | `208` | **`211`** | **`+3`** |
+| 간접 분기 / 점프 테이블 | 미해결 `0`, `355` 테이블 → `4,560` 타깃 | 미해결 `0`, **`365` 테이블 → `4,670` 타깃** | **`+10` 테이블 (`+110` 타깃)** |
+| 발견 명령어 수 | `188,398` (VFPU `84` `0.04%`, invalid `37` `0.02%`) | **`189,709`** (VFPU `84` `0.04%`, invalid `37` `0.02%`) | **`+1,311`** |
+| 함수 형태 | `touch vfpu` 32, `no jr $ra` 4,278, `computed jumps` 272, `scattered` 196 | `touch vfpu` 32, `no jr $ra` 4,315, `computed jumps` 276, `scattered` 199 | — |
+| 빌드 결과 (MSVC x64 Release) | 성공, 경고 0건 | 성공, **경고 0건** | — |
+
+* 패치 `0007`로 `module_start`가 `lui`/`addiu`로 조립해 `sceKernelCreateThread`에 넘기는 `user_main` 진입점 `0x0880FD20`(`psp_func_0880FD20`)이 정상 리프트됨을 **확인됨**.
+* PRX 회귀 확인: `reDMP1`의 PRX `BOOT.BIN`에 같은 도구로 `funcs`를 실행한 결과 함수 수 **`9,024`**(`761,988` B, `92.5%`)로 패치 전과 완전히 동일(**확인됨**).
 
 ---
 
-## 3. 정적 리프트 감사 (`tools/lift_audit.py`) (**확인됨**, 단계 B)
+## 3. 정적 리프트 감사 (`tools/lift_audit.py`) (**확인됨**, issue #5 갱신)
 
 `python tools/lift_audit.py --generated src/game/dmp2/recomp/generated --base 0x08804000`:
 
-* 감사 본문: `7,933`개 / `124`개 파일 (known thunks `35,869`)
-* 본문 끝 분류: `jr_ra` 3,637, `other` 1,930, `branch` 1,178, `j` 835, `branch_likely` 167, `jal` 113, `jr_reg` 73
-* Data misread as code: **`0`**
-* Mismatches: **`12`** (`j` 12건 — 모두 본문 끝에서 `psp_import_*()`를 꼬리 호출한 직후 `void` 함수 닫는 중괄호로 종료하는 형태: `0x08820B4C`, `0x0882695C`, `0x088269A0`, `0x08826BA4`, `0x0882DF6C`, `0x0882E22C`, `0x0882E23C`, `0x0882F8C4`, `0x0882F8CC`, `0x088807B4`, `0x088807D4`, `0x08882514`)
-* Tail-call-only cycles (SCCs): `284`개 (트램펄린 `--trampoline` 적용)
+* 감사 본문: `8,007`개 / `126`개 파일 (known thunks `36,097`)
+* Data misread as code: **`0`** (패치 `0007`로 추가된 74개 함수 중 데이터 오인 없음)
+* Mismatches: **`12`** (패치 전과 동일한 12건 — `j`로 `psp_import_*()` 꼬리 호출 직후 `void` 본문 종료)
+* Tail-call-only cycles (SCCs): **`284`**개 (트램펄린 `--trampoline` 적용)
 
 ---
 
@@ -75,13 +77,13 @@ This document records confirmed ELF structure, module metadata, and Phase B lift
 
 `BOOT.BIN` (844,948 bytes, SHA-1 `1a5c904989d430588da9653acad4b6c5cdab2885`) is a plain ELF32 MIPS little-endian **`ET_EXEC` (`e_type = 2`)** fixed at `0x08804000`, with one `PT_LOAD` (`filesz = 0xCDF20`, `memsz = 0x626500`, `rwx`), entry `0x0880FC4C`, module `djmax` at `0x088C0D34`, `$gp = 0x088D9F10`, 2 exports, and 229 imports across 27 libraries. Unlike DMP1's relocatable PRX (`e_type = 0xFFA0`), `BOOT.BIN` is already linked at `0x08804000`, so `regenerate.py` omits `--base` and verifies `p_vaddr == lift.json base`.
 
-## 2. Lift Results (**confirmed**, Phase B)
+## 2. Lift Results (**confirmed**, updated in issue #5)
 
-`allegrexrecomp emit --trampoline` (no `--base`) produced **7,933 functions** (`27,936` interior entries, `127` files), covering **753,592 / 772,856 bytes (97.5%)** of `.text`, with `208` distinct reached imports, `0` unresolved indirect jumps (`355` jump tables → `4,560` targets), `84` VFPU traps (`0.04%`), and `37` invalid words (`0.02%`). Both Win64 Debug and Release link cleanly with zero warnings.
+With local patch `0007-exec-scan-code-pointers.patch` (re-enabling `.text` `lui+addiu` pointer discovery on `ET_EXEC` while keeping PRX unchanged), `allegrexrecomp emit --trampoline` (no `--base`) produced **8,007 functions** (+74, `28,090` interior entries, +154, `129` files), covering **758,836 / 772,856 bytes (98.2%)** (+0.7%) of `.text`, with `211` distinct reached imports (+3), `0` unresolved indirect jumps (`365` jump tables → `4,670` targets, +10 tables / +110 targets), `84` VFPU traps (`0.04%`), and `37` invalid words (`0.02%`). `0x0880FD20` (`user_main`) is lifted (`psp_func_0880FD20`), and reDMP1's PRX `BOOT.BIN` stays unchanged at `9,024` functions. Release links cleanly with zero warnings.
 
 ## 3. Static Audit (`tools/lift_audit.py`, **confirmed**)
 
-Audited `7,933` bodies (`35,869` thunks): `0` data bodies, `284` tail-call SCCs (flat under `--trampoline`), and `12` `j` mismatches — all 12 are tail jumps to `psp_import_*()` immediately before the closing `}` of a `void` body.
+Audited `8,007` bodies (`36,097` thunks): `0` data bodies misread as code, `284` tail-call SCCs (flat under `--trampoline`), and the same `12` `j` mismatches (tail jumps to `psp_import_*()` at the end of `void` bodies).
 
 ## 4. Unresolved
 
