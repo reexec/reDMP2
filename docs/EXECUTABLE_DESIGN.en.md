@@ -33,7 +33,7 @@ This document accumulates confirmed structural facts about the original executab
 
 ## 3. Firmware Interfaces and Assets (**confirmed** / **inferred**)
 
-* **Confirmed**: Imports 229 distinct NIDs across 27 libraries. Against `repsp` (`7f856eb`), 141 (61.6%) are already implemented and 88 (38.4%) are missing (see [docs/analysis/boot.md](analysis/boot.md)).
+* **Confirmed**: Imports 229 distinct NIDs across 27 libraries. Against `repsp` v0.0.30 (`81558ef`), 141 (61.6%) are already implemented and 88 (38.4%) are missing. At runtime, the first unimplemented NID invoked after `module_start` (`0x0880FC4C`) is `SysMemUserForUser` `0x7591C7DB` (`sceKernelSetCompiledSdkVersion`) (see [docs/analysis/boot.md](analysis/boot.md)).
 * **Confirmed**: Unlike DMP1, there are no `USRDIR/modules/*.prx` files on disc, and DMP2 adds imports from `sceNet`/`sceNetAdhoc*` (23 NIDs), `sceHprm` (2 NIDs), `sceImpose` (2 NIDs), and `sceRtc` (1 NID).
 * **Confirmed**: Disc assets consist of `USRDIR/all.mp`..`all7.mp` (7 archives, ~1.61 GB total) and `USRDIR/movie/*.pmf` (6 movies).
 * **Unresolved**: Runtime thread topology, user partition usage, `all*.mp` container layout, and gameplay memory structures (to be analyzed after boot).
