@@ -69,6 +69,10 @@ extern "C" uint64_t psp_dispatch_calls(void);
 #define REDMP2_VERSION "0.0.0"
 #endif
 
+#ifndef REDMP2_LIFT_BASE
+#define REDMP2_LIFT_BASE 0x08804000u
+#endif
+
 namespace
 {
 
@@ -99,63 +103,6 @@ void PrintUsage(const char* prog)
 }
 
 #if REDMP2_HAVE_RECOMP
-uint32_t LoadLiftBase(const std::filesystem::path& variants_path,
-                      const std::filesystem::path& app_dir,
-                      const std::filesystem::path& game_dir)
-{
-    constexpr uint32_t kDefaultBase = 0x08804000u;
-    std::vector<std::filesystem::path> candidates;
-    if (!variants_path.empty())
-    {
-        candidates.push_back(variants_path.parent_path() / "lift.json");
-    }
-    candidates.push_back(app_dir / "lift.json");
-    candidates.push_back(app_dir / "src" / "game" / "dmp2" / "recomp" / "lift.json");
-    candidates.push_back(app_dir / ".." / "src" / "game" / "dmp2" / "recomp" / "lift.json");
-    candidates.push_back(app_dir / ".." / ".." / "src" / "game" / "dmp2" / "recomp" / "lift.json");
-    candidates.push_back(app_dir / ".." / ".." / ".." / "src" / "game" / "dmp2" / "recomp" / "lift.json");
-    candidates.push_back(game_dir / ".." / "src" / "game" / "dmp2" / "recomp" / "lift.json");
-    candidates.push_back(std::filesystem::current_path() / "src" / "game" / "dmp2" / "recomp" / "lift.json");
-
-    for (const auto& candidate : candidates)
-    {
-        std::error_code ec;
-        if (!std::filesystem::exists(candidate, ec))
-        {
-            continue;
-        }
-        std::ifstream in(candidate);
-        if (!in.is_open())
-        {
-            continue;
-        }
-        std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
-        const size_t key_pos = text.find("\"base\"");
-        if (key_pos == std::string::npos)
-        {
-            continue;
-        }
-        const size_t colon_pos = text.find(':', key_pos + 6);
-        if (colon_pos == std::string::npos)
-        {
-            continue;
-        }
-        const size_t q1 = text.find('"', colon_pos + 1);
-        const size_t q2 = (q1 != std::string::npos) ? text.find('"', q1 + 1) : std::string::npos;
-        if (q1 != std::string::npos && q2 != std::string::npos && q2 > q1 + 1)
-        {
-            const std::string val = text.substr(q1 + 1, q2 - q1 - 1);
-            char* end_ptr = nullptr;
-            unsigned long parsed = std::strtoul(val.c_str(), &end_ptr, 0);
-            if (end_ptr != nullptr && *end_ptr == '\0' && parsed != 0)
-            {
-                return static_cast<uint32_t>(parsed);
-            }
-        }
-    }
-    return kDefaultBase;
-}
-
 struct InputScriptEntry
 {
     uint32_t vblank = 0;
@@ -1470,8 +1417,7 @@ int main(int argc, char* argv[])
     if (lift_check)
     {
 #if REDMP2_HAVE_RECOMP
-        const uint32_t lift_base = LoadLiftBase(variants_path, app_dir, game_dir);
-        return RunLiftCheck(game_dir, result, lift_base);
+        return RunLiftCheck(game_dir, result, static_cast<uint32_t>(REDMP2_LIFT_BASE));
 #else
         std::cerr << "Error: redmp2 was built without generated code (--lift-check unavailable).\n";
         return 1;
@@ -1479,8 +1425,8 @@ int main(int argc, char* argv[])
     }
 
 #if REDMP2_HAVE_RECOMP
-    const uint32_t lift_base = LoadLiftBase(variants_path, app_dir, game_dir);
-    return RunBoot(game_dir, result, lift_base, headless, use_gl, scale, max_vblanks, input_script_path, save_dir,
+    return RunBoot(game_dir, result, static_cast<uint32_t>(REDMP2_LIFT_BASE), headless, use_gl, scale, max_vblanks,
+                   input_script_path, save_dir,
                    dialog_answer_yes ? repsp::hle::utility::DialogAnswer::kYes
                                      : repsp::hle::utility::DialogAnswer::kNo,
                    codec_plugin_path, no_codec_plugin, audio_latency_ms,
