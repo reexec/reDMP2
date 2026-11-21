@@ -51,6 +51,7 @@ set(ALLEGREXRECOMP_PATCHES
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0004-j-owned-target-goto.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0005-emit-trampoline.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0006-loop-hook.patch"
+    "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0007-exec-scan-code-pointers.patch"
 )
 
 foreach(patch IN LISTS ALLEGREXRECOMP_PATCHES)
