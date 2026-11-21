@@ -33,7 +33,7 @@
 
 ## 3. 펌웨어 인터페이스 및 자산 구조 (**확인됨** / **추정**)
 
-* **확인됨**: 27개 펌웨어 라이브러리에서 229개 고유 NID를 임포트한다. `repsp`(`7f856eb`) 기준으로 141개(61.6%)가 이미 구현되어 있으며, 88개(38.4%)가 미구현이다(세부 목록: [docs/analysis/boot.md](analysis/boot.md)).
+* **확인됨**: 27개 펌웨어 라이브러리에서 229개 고유 NID를 임포트한다. `repsp` v0.0.30(`81558ef`) 기준으로 141개(61.6%)가 이미 구현되어 있으며, 88개(38.4%)가 미구현이다. 실제 부팅 시 `module_start`(`0x0880FC4C`) 직후 첫 호출 미구현 NID는 `SysMemUserForUser` `0x7591C7DB`(`sceKernelSetCompiledSdkVersion`)이다(세부 목록: [docs/analysis/boot.md](analysis/boot.md)).
 * **확인됨**: DMP1과 달리 `USRDIR/modules/*.prx`가 디스크에 없고, 애드혹 멀티플레이(`sceNet`, `sceNetAdhoc`, `sceNetAdhocctl`, `sceNetAdhocMatching`, 합 23 NID), 리모컨(`sceHprm`, 2 NID), `sceImpose`(2 NID), `sceRtc`(1 NID)를 새로 임포트한다.
 * **확인됨**: 자산은 `USRDIR/all.mp`..`all7.mp`(7개, 합 약 1.61 GB)와 `USRDIR/movie/*.pmf`(6개)로 구성된다.
 * **미확정**: 런타임 스레드 구성, 메모리 파티션 사용량, `all*.mp` 컨테이너 구조, 게임플레이 메모리 구조(부팅 이후 후속 분석 예정).

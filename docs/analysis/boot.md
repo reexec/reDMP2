@@ -1,48 +1,48 @@
 # 첫 부팅 측정 및 정적 임포트 커버리지 (`ULKS-46116`)
 
-이 문서는 issue #1 단계 C의 첫 부팅 측정 결과(헤드리스·창 모드)와, 로드 단계 정지 이후 `tools/import_coverage.py`로 정적 계측한 `repsp` HLE 커버리지를 기록한다.
+이 문서는 `ULKS-46116` v1.09 `BOOT.BIN`의 첫 부팅 측정 결과(issue #1 로드 단계 정지 → issue #3 `repsp v0.0.30` 고정 후 첫 런타임 정지)와 `tools/import_coverage.py`로 정적 계측한 `repsp` HLE 커버리지를 기록한다.
 
 ---
 
-## 1. 첫 부팅 측정 결과 (**확인됨**)
+## 1. 첫 런타임 부팅 측정 결과 (`repsp v0.0.30`, `81558ef`) (**확인됨**)
 
 ```mermaid
-flowchart LR
-    CLI["redmp2 roms<br/>(창 모드 / --headless --max-vblanks 600)"] --> ID["IdentifyGameDirectory<br/>ULKS46116 v1.09 성공"]
-    ID --> LOAD["repsp::runtime::LoadPrx<br/>(ProcessPrx)"]
-    LOAD --> STOP["정지 (exit 1)<br/>Unsupported ELF type<br/>(expected PRX e_type 0xFFA0)"]
+sequenceDiagram
+    participant App as redmp2
+    participant Loader as repsp LoadPrx
+    participant Guest as BOOT.BIN (lifted)
+    participant HLE as repsp NID registry
+    App->>Loader: BOOT.BIN, base 0x08804000
+    Loader-->>App: image 0x08804000..0x08E2A500, gp 0x088D9F10, entry 0x0880FC4C
+    App->>Guest: module_start thread (prio 32, stack 256 KiB)
+    Guest->>HLE: SysMemUserForUser 0x7591C7DB (sceKernelSetCompiledSdkVersion)
+    HLE-->>App: stop (b) unimplemented NID, exit code 10
 ```
 
-### 실행 명령 및 출력
+### 실행 명령 및 출력 요약
 
-1. 헤드리스(`.\build\win64-release\Release\redmp2.exe roms --headless --max-vblanks 600`):
-   ```text
-   [redmp2] Game identified successfully:
-     Title:       DJ Max Portable 2
-     Disc ID:     ULKS46116
-     Version:     1.09
-     Executable:  BOOT.BIN (844948 bytes)
-     SHA-1:       1a5c904989d430588da9653acad4b6c5cdab2885
-   [boot] Error: LoadPrx failed: Unsupported ELF type (expected PRX e_type 0xFFA0)
-   ```
-   종료 코드: `1`.
-2. 창 모드(`.\build\win64-release\Release\redmp2.exe roms`):
-   동일한 출력 후 즉시 종료(종료 코드 `1`). 창 생성·게스트 진입 전 단계에서 정지.
-3. 참고: `redmp2` CLI는 `<game_directory>`를 첫 번째 위치 인자(`argv[1]`)로 받으므로 `--headless`를 먼저 넘기면 `Game directory does not exist or is not a directory: --headless`로 거부된다.
+```powershell
+.\build\win64-release\Release\redmp2.exe roms --headless --max-vblanks 600 --save-dir <temp>\save --crash-dir <temp>\crash
+```
 
-### 정지 요약
-
-* **정지 위치**: 게스트 코드 실행 진입 전 (`repsp::runtime::LoadPrx` → `repsp::module::ProcessPrx`).
-* **정지 원인 (**확인됨**)**: `BOOT.BIN`이 `ET_EXEC`(`e_type = 2`)이나 `third_party/repsp` (`7f856eb`)의 `ProcessPrx`는 `e_type == 0xFFA0`(PRX)만 허용한다.
-* **첫 화면 여부**: 표시되지 않음(로드 단계에서 정지).
-* **호출된 미구현 import**: 0건(게스트 진입 전 정지).
-* **로컬 CTest 상태 (**확인됨**)**: 생성 코드 포함 빌드 기준 **30/32 통과, 2 실패**(`app_smoke_registered_roms`, `app_lift_check` — 두 테스트 모두 동일한 `LoadPrx failed: Unsupported ELF type (expected PRX e_type 0xFFA0)`로 실패). 이 두 테스트는 비활성화하거나 `WILL_FAIL`로 숨기지 않고 그대로 두어 `repsp`의 `ET_EXEC` 로드 구현 시 자동으로 통과 여부를 검증한다.
+* 식별 성공: `DJ Max Portable 2` (`ULKS46116`, v1.09, `BOOT.BIN`, 844,948 B, SHA-1 `1a5c904989d430588da9653acad4b6c5cdab2885`).
+* 이미지 로드 성공: `0x08804000..0x08E2A500` (6,448,384 B), `$gp = 0x088D9F10`, `entry = 0x0880FC4C`, `module_start` 스레드(우선순위 32, 스택 256 KiB, `tid = 4`) 생성 후 게스트 실행 진입.
+* 정지 보고 요약:
+  * **정지 분류**: `(b) Unimplemented kernel NID`
+  * **라이브러리 / NID**: `SysMemUserForUser` / `0x7591C7DB` (`sceKernelSetCompiledSdkVersion`)
+  * **종료 코드**: `10`
+  * **디스패치 / 프레임**: 디스패치 `0`회, 표시 `0`프레임 (`VBlank = 0`, `GE lists = 0`, `Audio output_calls = 0`)
+* **로컬 CTest 상태 (**확인됨**)**: 생성 코드 포함 Release 빌드 기준 **31/32 통과, 1 실패**(`app_lift_check` 통과, `app_smoke_registered_roms`는 위 미구현 NID 정지로 실패). 생성 코드 없는 Win64 Debug/Release 빌드는 **30/30 통과**.
+* **이전 기록 (issue #1, `repsp` `7f856eb`)**: `ET_EXEC` 미지원으로 `LoadPrx failed: Unsupported ELF type (expected PRX e_type 0xFFA0)`(종료 코드 `1`, CTest 30/32)에서 정지했으나, `repsp v0.0.30`([reexec/repsp#65](https://github.com/reexec/repsp/issues/65))의 `ET_EXEC` 로드 지원으로 해소되었다.
+* 참고: `redmp2` CLI는 `<game_directory>`를 첫 번째 위치 인자(`argv[1]`)로 받는다.
 
 ---
 
 ## 2. 정적 임포트 커버리지 (`tools/import_coverage.py`) (**확인됨**)
 
-실행 명령: `python -I tools/import_coverage.py roms/PSP_GAME/SYSDIR/BOOT.BIN` (기준 `third_party/repsp` `7f856eb`, 등록 HLE NID `146`개, 공개 이름표 `216`개).
+실행 명령: `python -I tools/import_coverage.py roms/PSP_GAME/SYSDIR/BOOT.BIN` (기준 `third_party/repsp` v0.0.30 `81558ef` — HLE NID 목록은 `7f856eb`과 동일: 등록 HLE NID `146`개, 공개 이름표 `216`개).
+
+정적 대조에서 확인된 미구현 NID 88개 중 **실제 런타임에 첫 번째로 호출된 NID**는 `SysMemUserForUser`의 `0x7591C7DB`(`sceKernelSetCompiledSdkVersion`)이다(**확인됨**).
 
 ### 라이브러리별 구현/미구현 현황
 
@@ -108,23 +108,28 @@ flowchart LR
 ## 3. 추정 및 미확정 항목
 
 * **추정**: `sceUtility` 미구현 9건 중에는 펌웨어 AV/네트워크 모듈 로드 함수(`sceUtilityLoadAvModule` / `sceUtilityUnloadAvModule` / `sceUtilityLoadNetModule` / `sceUtilityUnloadNetModule`)가 포함되어 있을 가능성이 높다(디스크에 `USRDIR/modules/*.prx`가 없기 때문).
-* **미확정**: 88개 미구현 NID 중 실제 부팅·타이틀·플레이 경로에서 호출되는 NID가 무엇인지는 `repsp`의 `ET_EXEC` 로드 지원 후 런타임 측정으로 확정한다.
+* **미확정**: `0x7591C7DB`(`sceKernelSetCompiledSdkVersion`) 이후 부팅·타이틀·플레이 경로에서 추가로 호출되는 미구현 NID의 정확한 순서는 `repsp`에 해당 HLE를 추가하며 순차 측정으로 확정한다.
 
 ---
 
 # First Boot Measurement and Static Import Coverage (`ULKS-46116`)
 
-## 1. First Boot Measurement (**confirmed**)
+## 1. First Runtime Boot Measurement (`repsp v0.0.30`, `81558ef`) (**confirmed**)
 
-Both headless (`redmp2.exe roms --headless --max-vblanks 600`) and windowed (`redmp2.exe roms`) runs identify `ULKS46116` v1.09 (`BOOT.BIN`, SHA-1 `1a5c904989d430588da9653acad4b6c5cdab2885`) and then stop immediately before guest execution with exit code `1`:
-`[boot] Error: LoadPrx failed: Unsupported ELF type (expected PRX e_type 0xFFA0)`.
-No window/frame is produced yet, and no guest imports are invoked yet. The two local-only CTest cases (`app_smoke_registered_roms`, `app_lift_check`) fail with the same error and are intentionally kept enabled (30/32 passed, 2 failed) until `repsp` adds `ET_EXEC` loading.
+With `third_party/repsp` pinned to v0.0.30 (`81558ef`, [reexec/repsp#65](https://github.com/reexec/repsp/issues/65)), `BOOT.BIN` now loads cleanly as a fixed-address `ET_EXEC` at `0x08804000..0x08E2A500` (`$gp = 0x088D9F10`, `entry = 0x0880FC4C`), lifting the earlier issue #1 load-stage stop (`Unsupported ELF type`).
+
+Running `redmp2.exe roms --headless --max-vblanks 600 --save-dir <temp>\save --crash-dir <temp>\crash` enters `module_start` (prio 32, 256 KiB stack) and stops immediately on its first import call:
+* **Stop class**: `(b) Unimplemented kernel NID`
+* **Library / NID**: `SysMemUserForUser` / `0x7591C7DB` (`sceKernelSetCompiledSdkVersion`)
+* **Exit code**: `10`
+* **Counters**: `0` dispatches, `0` frames presented (`VBlank = 0`, `GE lists = 0`, `Audio output_calls = 0`).
+* **Local CTest (**confirmed**)**: Release with generated code passes **31/32** (`app_lift_check` now passes; `app_smoke_registered_roms` fails on this unimplemented NID and is kept enabled). Win64 Debug/Release without generated code pass **30/30**.
 
 ## 2. Static Import Coverage (`tools/import_coverage.py`, **confirmed**)
 
-Running `python -I tools/import_coverage.py roms/PSP_GAME/SYSDIR/BOOT.BIN` against `third_party/repsp` (`7f856eb`, 146 registered HLE NIDs) shows **141 / 229 (61.6%)** imported NIDs already implemented and **88 / 229 (38.4%)** missing across 19 libraries (see table and full NID list above). Eight libraries (`Kernel_Library`, `LoadExecForUser`, `StdioForUser`, `sceDisplay`, `sceCtrl`, `scePower`, `sceDmac`, `sceMpeg`) are 100% covered; the largest uncovered groups are `sceNet*` (0/23 across 4 libraries), `IoFileMgrForUser` (13 missing), `sceUtility` (9 missing), and `sceSasCore` (8 missing), plus `sceHprm` (0/2), `sceImpose` (0/2), and `sceRtc` (0/1).
+Running `python -I tools/import_coverage.py roms/PSP_GAME/SYSDIR/BOOT.BIN` against `third_party/repsp` v0.0.30 (`81558ef`, 146 registered HLE NIDs) shows **141 / 229 (61.6%)** imported NIDs already implemented and **88 / 229 (38.4%)** missing across 19 libraries (see table and full NID list above). Of those 88 missing NIDs, the first one actually invoked at runtime is `SysMemUserForUser` `0x7591C7DB` (`sceKernelSetCompiledSdkVersion`) (**confirmed**).
 
 ## 3. Inferred and Unresolved
 
 * **Inferred**: The 9 missing `sceUtility` NIDs include firmware AV/Net module loaders (`sceUtilityLoadAvModule` / `sceUtilityLoadNetModule`), consistent with the absence of `USRDIR/modules/*.prx`.
-* **Unresolved**: Which of the 88 missing NIDs are actually invoked during boot and gameplay will be measured once `repsp` supports loading `ET_EXEC`.
+* **Unresolved**: The exact sequence of remaining missing NIDs invoked after `0x7591C7DB` during boot and gameplay will be confirmed incrementally as `repsp` HLE support expands.
