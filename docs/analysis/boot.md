@@ -39,6 +39,16 @@ sequenceDiagram
     * **라이브러리 / NID**: `ThreadManForUser:sceKernelCreateVpl (0x56C039B5)`
     * **종료 코드**: `10` (디스패치 `0`, 표시 `0`프레임, `GE: 2 lists, 289 commands, 2 finishes`)
 * **이전 기록 (issue #1, `repsp` `7f856eb`)**: `ET_EXEC` 미지원으로 `LoadPrx failed: Unsupported ELF type (expected PRX e_type 0xFFA0)`(종료 코드 `1`, CTest 30/32)에서 정지했으나, `repsp v0.0.30`([reexec/repsp#65](https://github.com/reexec/repsp/issues/65))의 `ET_EXEC` 로드 지원으로 해소되었다.
+* **issue #6 첫 프레임 뒤 멈춤 원인 측정 (`repsp` `i69-poll-timeouts` `7ee04b9` + `reDMP2` `v0.0.3`, **확인됨**)**:
+  * `repsp` #69 적용 후 `sound_poll_thread`(`0x0882FAE4`, 우선순위 18)는 600 VBlank 동안 `sceKernelDelayThread` 1,738회, `__sceSasCore` 1,739회, `sceAudioOutputPannedBlocking` 1,739회(언더런 0)로 정상 동작하지만, `user_main`(우선순위 32)은 여전히 `sceKernelSetEventFlag(0x11, 0x2)`만 7,200만 회 반복 호출하며 1프레임 뒤 멈춘다.
+  * 환경 변수 진단 `REDMP2_TRACE_NID=0x1FB15A32`([trap.c](../../src/recomp_abi/trap.c))로 실측한 결과, 모든 호출의 반환 주소는 `$ra = 0x0882FB74`(`$sp = 0x09FBF400`, `$a0 = 0x11`, `$a1 = 0x2`, `v0 = 0`)이다.
+  * `0x0882FB6C`(`psp_func_0882FB0C`, `sound_poll_thread` 시작 직후이자 `stream_sound_poll_thread` `0x0882F0F8` 생성 직전)이 `jal 0x088312C8`을 호출한다. 원본 MIPS 코드에서 `0x088312C8`은 `0x08972158`에서 이벤트 플래그 핸들 `0x11`을 읽고 `$a1 = 2`를 설정해 `j 0x0882E618`로 꼬리 점프하며, `0x0882E618`은 `j 0x088C0540`(`sceKernelSetEventFlag` 임포트 스텁) 한 번으로 `$ra`(`0x0882FB74`)로 복귀한다. **원본 게임 코드에는 바쁜 대기 반복문 자체가 없다**(설계 가설 H1·H2 모두 기각).
+  * **확정된 원인(리프터 코드 생성 결함)**:
+    1. `0x0882E618`이 `psp_body_088312C8` 내부에 주소 오름차순으로 `L_088312C8:` **바로 앞**에 배치된다.
+    2. `BOOT.BIN`(`ET_EXEC`)에서 임포트 스텁 주소(`0x088C0540` 등)가 `is_import(an, target)`일 뿐 아니라 `an->funcs`에도 들어가 `is_function(an, target)`도 참이다(`dmp2_funcs_121.c:psp_func_088C0540`).
+    3. 로컬 패치 `patches/psprecomp/0005-emit-trampoline.patch`에서 `emit_static_call_tail()`은 `is_import`를 먼저 검사해 `return;` 없이 `psp_import_088C0540();`만 출력하지만, 호출부(`emit.c` `in.is_jump` 경로)는 `if (!c->trampoline || !is_function(an, in.target))` 조건으로 `return;`을 생략한다. 두 조건이 겹쳐 `L_0882E618:`의 `psp_import_088C0540();` 뒤에 `return;`이 누락되고, C 제어 흐름이 바로 아래 `L_088312C8:` → `goto L_0882E618;`으로 폴스루(fall-through)하며 리프터가 합성한 무한 루프가 형성된다.
+    4. 생성 코드 전체에서 `return;`이 누락된 `j <import>` 지점은 총 13곳이며, 나머지 12곳은 C 함수 끝(`}`) 직전이라 우연히 복귀하지만 `0x0882E618`만 뒤에 레이블(`L_088312C8`)이 이어져 무한 루프가 된다.
+  * **미확정**: `0005-emit-trampoline.patch`의 `return;` 누락을 수정하고 임포트 스텁이 `an->funcs`에 들어가는 경로를 정리한 뒤, `stream_sound_poll_thread`(`0x0882F0F8`) 시작 이후 다음 정지 지점이 무엇인지는 수정 후 측정으로 확인한다.
 * 참고: `redmp2` CLI는 `<game_directory>`를 첫 번째 위치 인자(`argv[1]`)로 받는다.
 
 ---
@@ -130,6 +140,12 @@ Running `redmp2.exe roms --headless --max-vblanks 600 --save-dir <temp>\save --c
 * **Counters**: `0` dispatches, `0` frames presented (`VBlank = 0`, `GE lists = 0`, `Audio output_calls = 0`).
 * **Local CTest (**confirmed**)**: Release with generated code passes **31/32** (`app_lift_check` now passes; `app_smoke_registered_roms` fails on this unimplemented NID and is kept enabled). Win64 Debug/Release without generated code pass **30/30** (31/31 locally when `roms/` is present).
 * **Issue #5 follow-up (`0008-exec-scan-outside-text-bodies.patch`) with `repsp` #67 working tree (`5e69d39`, **confirmed**)**: Once `0x088832B8` and `0x08883278` are lifted, the headless run passes C++ static initialization, `sceDisplaySetMode` (2 calls), `sceGe` setup and 2 display lists (289 commands, 2 finishes), `scePowerRegisterCallback`, `sceUmdActivate`/`GetDriveStat`, and `sceUtilityLoadAvModule` (3 calls), stopping at `(b) Unimplemented kernel NID`, `ThreadManForUser:sceKernelCreateVpl (0x56C039B5)`, exit code `10`.
+* **Issue #6 stall after first frame — root cause measurement (`repsp` `i69-poll-timeouts` `7ee04b9` + `reDMP2` `v0.0.3`, **confirmed**)**:
+  * After `repsp` #69, `sound_poll_thread` (`0x0882FAE4`, prio 18) runs normally (`sceKernelDelayThread` 1,738 calls, `__sceSasCore` 1,739 calls, `sceAudioOutputPannedBlocking` 1,739 calls, 0 underruns across 600 vblanks), yet `user_main` (prio 32) still calls `sceKernelSetEventFlag(0x11, 0x2)` ~72M times and presents only 1 frame.
+  * Tracing via env-gated `REDMP2_TRACE_NID=0x1FB15A32` ([trap.c](../../src/recomp_abi/trap.c)) confirms every call has `$ra = 0x0882FB74` (`$sp = 0x09FBF400`, `$a0 = 0x11`, `$a1 = 0x2`, `v0 = 0`).
+  * `0x0882FB6C` (in `psp_func_0882FB0C`, right after starting `sound_poll_thread` and right before creating `stream_sound_poll_thread` at `0x0882F0F8`) calls `jal 0x088312C8`. In original MIPS, `0x088312C8` loads event flag `0x11` from `0x08972158`, sets `$a1 = 2`, tail-jumps to `0x0882E618`, which tail-jumps to `0x088C0540` (`sceKernelSetEventFlag`) and returns once to `$ra = 0x0882FB74`. **There is no busy loop in the original guest code** (both hypotheses H1 and H2 are refuted).
+  * **Confirmed root cause (lifter codegen bug)**: In `psp_body_088312C8`, `L_0882E618:` is emitted immediately before `L_088312C8:` (ascending address order). Because `BOOT.BIN` import stubs (`0x088C0540`, etc.) are both `is_import` and `is_function` (`an->funcs` contains `psp_func_088C0540`), `patches/psprecomp/0005-emit-trampoline.patch` triggers a mismatch: `emit_static_call_tail()` takes the `is_import` branch (emitting `psp_import_088C0540();` without `return;`), while the `in.is_jump` caller checks `if (!c->trampoline || !is_function(an, in.target))` and omits `return;`. C control flow falls straight through from `L_0882E618:` into `L_088312C8:` → `goto L_0882E618;`, creating a lifter-synthesized infinite loop. Across all generated code, 13 `j <import>` sites omit `return;`; 12 happen to precede `}` while `0x0882E618` is followed by `L_088312C8`.
+  * **Unresolved**: What happens once the missing `return;` in `0005-emit-trampoline.patch` is fixed and `stream_sound_poll_thread` (`0x0882F0F8`) starts will be measured in the follow-up fix step.
 
 ## 2. Static Import Coverage (`tools/import_coverage.py`, **confirmed**)
 
