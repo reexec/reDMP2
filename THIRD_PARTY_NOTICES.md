@@ -14,7 +14,7 @@ reDMP2는 다음 서드파티 오픈소스 프로젝트를 포함하거나 링�
 
 * 위치: `third_party/repsp` (submodule)
 * 업스트림: https://github.com/reexec/repsp
-* 고정점: `7f856eb` (v0.0.29)
+* 고정점: `81558ef` (v0.0.30)
 * 라이선스: MIT License (Copyright (c) 2026 reexec)
 * 용도: 공유 PSP 런타임, 게스트 메모리 변환, NID 레지스트리, HLE 모듈, 플랫폼 백엔드.
 
@@ -62,7 +62,7 @@ reDMP2 incorporates or links the following third-party open-source projects. The
 
 * Location: `third_party/repsp` (submodule)
 * Upstream: https://github.com/reexec/repsp
-* Pin: `7f856eb` (v0.0.29)
+* Pin: `81558ef` (v0.0.30)
 * License: MIT License (Copyright (c) 2026 reexec)
 * Usage: Shared portable PSP runtime, guest memory translation, NID registry, HLE modules, platform backends.
 
