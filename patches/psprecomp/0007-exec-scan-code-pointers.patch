@@ -1,16 +1,8 @@
+From 406ac9faf7ed0faa79e71ce6931f48ae6c61e8a8 Mon Sep 17 00:00:00 2001
 From: reDMP2 <noreply@reexec.local>
+Date: Sat, 21 Nov 2026 19:21:40 +0900
 Subject: [PATCH] analyze: run .text lui+addiu pointer scan on ET_EXEC images
 
-Patch 0001 skipped the .text lui+addiu pair scan whenever an->image was set.
-That is right for PRX modules (relocated PRXs enumerate HI16/LO16 pairs via
-SHT_PRXRELOC, and unrelocated base-0 PRXs collide with small immediates),
-but fixed-address ET_EXEC executables also receive segment 0 as an->image
-while having no relocation tables, causing code-built function pointers
-(such as thread entry points passed to sceKernelCreateThread) to be missed.
-
-Track skip_lui_scan explicitly on a_analysis: set it for relocated PRXs and
-for non-ET_EXEC (e_type != 2) images, leaving ET_EXEC and imageless runs
-to execute the upstream lui+addiu scan.
 ---
  tools/allegrexrecomp/analyze.c | 12 ++++++------
  tools/allegrexrecomp/analyze.h |  1 +
@@ -18,6 +10,7 @@ to execute the upstream lui+addiu scan.
  3 files changed, 15 insertions(+), 12 deletions(-)
 
 diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
+index aa0b019..1ffc94f 100644
 --- a/tools/allegrexrecomp/analyze.c
 +++ b/tools/allegrexrecomp/analyze.c
 @@ -533,12 +533,12 @@ int a_discover(a_analysis *an, const uint32_t *seeds, int nseeds) {
@@ -40,6 +33,7 @@ diff --git a/tools/allegrexrecomp/analyze.c b/tools/allegrexrecomp/analyze.c
          uint32_t ssize = an->scan_size ? an->scan_size : an->size;
          for (uint32_t off = 0; off + 4 <= ssize; off += 4) {
 diff --git a/tools/allegrexrecomp/analyze.h b/tools/allegrexrecomp/analyze.h
+index 041c130..fddf2e0 100644
 --- a/tools/allegrexrecomp/analyze.h
 +++ b/tools/allegrexrecomp/analyze.h
 @@ -88,6 +88,7 @@ typedef struct {
@@ -51,10 +45,10 @@ diff --git a/tools/allegrexrecomp/analyze.h b/tools/allegrexrecomp/analyze.h
      /* Output */
      a_func   *funcs;
 diff --git a/tools/allegrexrecomp/main.c b/tools/allegrexrecomp/main.c
+index d988e31..f62c15d 100644
 --- a/tools/allegrexrecomp/main.c
 +++ b/tools/allegrexrecomp/main.c
-@@ -518,14 +518,16 @@ static int load_and_discover(const char *path, uint32_t base, uint8_t **out_relo
-     an->stub_size = e->stub_size;
+@@ -524,13 +524,15 @@ static int load_and_discover(const char *path, uint32_t base, uint8_t **out_relo
      an->scan_calls = 1;
      /* The whole loaded segment, so jump tables in .rodata/.data can be read. */
      if (reloc_buf) {
@@ -76,3 +70,6 @@ diff --git a/tools/allegrexrecomp/main.c b/tools/allegrexrecomp/main.c
      }
  
      /* Seeds come from three places, in increasing order of how much they find:
+-- 
+2.53.0.windows.2
+

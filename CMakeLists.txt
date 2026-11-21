@@ -46,11 +46,7 @@ file(COPY "${ALLEGREXRECOMP_ORIG_DIR}/" DESTINATION "${ALLEGREXRECOMP_BUILD_DIR}
 
 find_package(Git REQUIRED)
 set(ALLEGREXRECOMP_PATCHES
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0001-relocate-prx-at-base.patch"
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0003-jalr-fallthrough.patch"
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0004-j-owned-target-goto.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0005-emit-trampoline.patch"
-    "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0006-loop-hook.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0007-exec-scan-code-pointers.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0008-exec-scan-outside-text-bodies.patch"
     "${CMAKE_CURRENT_SOURCE_DIR}/patches/psprecomp/0009-tail-jump-import-return.patch"
