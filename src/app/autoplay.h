@@ -41,6 +41,7 @@ inline constexpr uint32_t kNoteArrayElemSize = 8u;                  // 0x0885AFA
 
 inline constexpr uint32_t kNoteTimeOffset = 0u;                     // 0x08858CFC: note time (u32, unaligned)
 inline constexpr uint32_t kNoteTypeOffset = 4u;                     // 0x08858CFC: note type (u8)
+inline constexpr uint32_t kNoteJudgedOffset = 6u;                   // 0x08858CFC: judged/active flag (u8; 0=unjudged, !=0=judged)
 inline constexpr uint32_t kNoteDurationOffset = 14u;                // 0x08858D4C: duration (u16, unaligned); >= 7 is long note
 inline constexpr uint16_t kLongNoteMinDuration = 7u;                // 0x08858D4C: slti $at, $v1, 7
 inline constexpr uint8_t kNoteTypeNormal = 1u;                      // 0x08858CFC: tap and long note

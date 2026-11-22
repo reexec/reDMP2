@@ -374,6 +374,19 @@ uint32_t Autoplay::FilterButtons(uint32_t buttons, const repsp::runtime::GuestMe
                 continue;
             }
 
+            uint8_t note_judged = 0;
+            if (!ReadU8Checked(mem, note_addr + kNoteJudgedOffset, note_judged))
+            {
+                break;
+            }
+            if (note_judged != 0u)
+            {
+                // Already judged (missed/hit) or an already-active long note: skip without pressing
+                // so enabling autoplay mid-song does not replay past notes.
+                ++lane_cursor_[lane];
+                continue;
+            }
+
             uint32_t note_time = 0;
             uint16_t duration = 0;
             if (!ReadU32Checked(mem, note_addr + kNoteTimeOffset, note_time) ||

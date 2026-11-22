@@ -32,6 +32,7 @@ struct SynthNote
     uint8_t type = kNoteTypeNormal;
     uint8_t channel = 0;
     uint16_t duration = 6u;
+    uint8_t judged = 0u;
 };
 
 struct SynthChartFixture
@@ -98,6 +99,7 @@ struct SynthChartFixture
             raw[3] = static_cast<uint8_t>((notes[i].time >> 24) & 0xFFu);
             raw[4] = notes[i].type;
             raw[5] = notes[i].channel;
+            raw[6] = notes[i].judged;
             raw[14] = static_cast<uint8_t>(notes[i].duration & 0xFFu);
             raw[15] = static_cast<uint8_t>((notes[i].duration >> 8) & 0xFFu);
             mem.WriteBlock(note_addr, raw, sizeof(raw));
@@ -346,6 +348,40 @@ int main()
             pressed = pressed || ((out & kPspCtrlLeft) != 0u);
         }
         PROBE_ASSERT(pressed);
+    }
+
+    // 6. Mid-song enable: skip already-judged tap notes and already-started long notes (+6 != 0)
+    //    without pressing, and press from the first unjudged note onward.
+    {
+        SynthChartFixture fx;
+        fx.WriteScene(mem, kGameplaySceneVtable, 4u, 0u);
+        fx.SetLaneNotes(mem, 0u, 3u, {
+            {0u, kNoteTypeHeader, 3u, 0u, 0u},
+            {100u, kNoteTypeNormal, 3u, 6u, 1u},    // already missed/judged tap
+            {200u, kNoteTypeNormal, 3u, 6u, 3u},    // already hit tap
+            {300u, kNoteTypeNormal, 3u, 120u, 1u},  // already-started long note
+            {500u, kNoteTypeNormal, 3u, 6u, 0u},    // first unjudged note
+        });
+        fx.SetLaneNotes(mem, 1u, 4u, {});
+        fx.SetLaneNotes(mem, 2u, 5u, {});
+        fx.SetLaneNotes(mem, 3u, 6u, {});
+
+        ap.ResetState();
+        ap.SetEnabled(false);
+        fx.SetNow(mem, 440u);
+        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+
+        // Enable autoplay mid-song at t=450: none of the judged notes (100, 200, 300) may be pressed.
+        ap.SetEnabled(true);
+        fx.SetNow(mem, 450u);
+        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        fx.SetNow(mem, 480u);
+        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        // At t=500, the first unjudged note is pressed once and released on the next call.
+        fx.SetNow(mem, 500u);
+        PROBE_ASSERT(ap.FilterButtons(0u, mem) == kPspCtrlLeft);
+        fx.SetNow(mem, 516u);
+        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
     }
 
     mem.Shutdown();
