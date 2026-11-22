@@ -1,5 +1,6 @@
 #include "autoplay.h"
 
+#include "repsp/hle/ctrl.h"
 #include "repsp/runtime/guest_memory.h"
 
 #include <cstdio>
@@ -67,11 +68,15 @@ void Autoplay::ResetState()
     has_last_now_ = false;
     stalled_calls_ = 0;
     logged_unsupported_type_ = false;
-    checked_analog_lane_ = false;
     lane_cursor_.fill(0u);
     lane_pressed_prev_.fill(false);
     lane_holding_.fill(false);
     lane_hold_until_.fill(0u);
+    analog_cursor_ = 0;
+    analog_pressed_prev_ = false;
+    analog_holding_ = false;
+    analog_hold_until_ = 0;
+    analog_hold_left_next_ = false;
 }
 
 uint32_t Autoplay::BitIndexToMask(uint8_t bit_idx)
@@ -123,67 +128,7 @@ uint32_t Autoplay::AllLaneButtonsMask(
     return mask;
 }
 
-void Autoplay::CheckAnalogLaneNotesOnce(const repsp::runtime::GuestMemory& mem,
-                                        uint32_t gear_addr,
-                                        uint32_t chart_addr,
-                                        uint32_t analog_lane)
-{
-    using namespace autoplay_layout;
-    if (checked_analog_lane_)
-    {
-        return;
-    }
-    checked_analog_lane_ = true;
-
-    uint32_t channel = 0;
-    if (!ReadU32Checked(mem, gear_addr + kGearLaneChannelBaseOffset + analog_lane * 4u, channel))
-    {
-        return;
-    }
-
-    const uint32_t arr_addr = chart_addr + kChartChannelArrayBaseOffset + channel * kChartChannelEntryStride;
-    uint32_t arr_begin = 0;
-    uint32_t note_count = 0;
-    if (!ReadU32Checked(mem, arr_addr + 0u, arr_begin) ||
-        !ReadU32Checked(mem, arr_addr + 4u, note_count) ||
-        arr_begin == 0u || note_count == 0u || note_count > kMaxChannelNotes)
-    {
-        return;
-    }
-
-    const uint32_t byte_len = note_count * kNoteArrayElemSize;
-    if (!mem.IsValidAddress(arr_begin, byte_len))
-    {
-        return;
-    }
-
-    uint32_t play_notes = 0;
-    for (uint32_t i = 0; i < note_count; ++i)
-    {
-        uint32_t note_addr = 0;
-        if (!ReadU32Checked(mem, arr_begin + i * kNoteArrayElemSize, note_addr) ||
-            note_addr == 0u || !mem.IsValidAddress(note_addr, 16u))
-        {
-            break;
-        }
-        uint8_t note_type = 0;
-        if (ReadU8Checked(mem, note_addr + kNoteTypeOffset, note_type) && note_type == kNoteTypeNormal)
-        {
-            ++play_notes;
-        }
-    }
-
-    if (play_notes > 0u)
-    {
-        std::fprintf(stderr,
-                     "[autoplay] analog lane %u (ch=%u) has %u play note(s); analog input is not handled yet\n",
-                     analog_lane,
-                     channel,
-                     play_notes);
-    }
-}
-
-uint32_t Autoplay::FilterButtons(uint32_t buttons, const repsp::runtime::GuestMemory& mem)
+void Autoplay::FilterSample(repsp::hle::ctrl::SceCtrlData& sample, const repsp::runtime::GuestMemory& mem)
 {
     using namespace autoplay_layout;
 
@@ -191,7 +136,7 @@ uint32_t Autoplay::FilterButtons(uint32_t buttons, const repsp::runtime::GuestMe
     {
         in_gameplay_.store(false, std::memory_order_release);
         ResetState();
-        return buttons;
+        return;
     }
 
     uint32_t scene_addr = 0;
@@ -201,7 +146,7 @@ uint32_t Autoplay::FilterButtons(uint32_t buttons, const repsp::runtime::GuestMe
     {
         in_gameplay_.store(false, std::memory_order_release);
         ResetState();
-        return buttons;
+        return;
     }
 
     in_gameplay_.store(true, std::memory_order_release);
@@ -226,20 +171,20 @@ uint32_t Autoplay::FilterButtons(uint32_t buttons, const repsp::runtime::GuestMe
         !ReadU32Checked(mem, score_addr + kScoreNowTimeOffset, now) ||
         !ReadU8Checked(mem, kAddrModeByte, mode) || mode > kMaxMode)
     {
-        return buttons;
+        return;
     }
 
     const uint32_t analog_lane = total_lanes - 1u;
     const uint32_t button_lane_count = (end_lane > analog_lane) ? analog_lane : end_lane;
     if (button_lane_count == 0u || button_lane_count > kMaxLanes)
     {
-        return buttons;
+        return;
     }
 
     const uint32_t key_row_addr = kAddrKeyConfigTable + static_cast<uint32_t>(mode) * kKeyConfigModeStride;
     if (!mem.IsValidAddress(key_row_addr, kKeyConfigModeStride))
     {
-        return buttons;
+        return;
     }
     std::array<uint8_t, kKeyConfigModeStride> key_row{};
     mem.ReadBlock(key_row_addr, key_row.data(), key_row.size());
@@ -250,10 +195,8 @@ uint32_t Autoplay::FilterButtons(uint32_t buttons, const repsp::runtime::GuestMe
         ResetState();
     }
 
-    CheckAnalogLaneNotesOnce(mem, gear_addr, chart_addr, analog_lane);
-
     // Paused (or not started): the chart time stands still. Hand the buttons
-    // over unchanged so the pause menu works, and drop any hold in progress.
+    // and stick over unchanged so the pause menu works, and drop any hold in progress.
     if (has_last_now_ && now == last_now_)
     {
         if (stalled_calls_ < kStalledCallsForPause)
@@ -269,9 +212,11 @@ uint32_t Autoplay::FilterButtons(uint32_t buttons, const repsp::runtime::GuestMe
     {
         lane_pressed_prev_.fill(false);
         lane_holding_.fill(false);
+        analog_pressed_prev_ = false;
+        analog_holding_ = false;
         last_score_addr_ = score_addr;
         last_chart_addr_ = chart_addr;
-        return buttons;
+        return;
     }
 
     uint32_t delta = has_last_now_ ? (now - last_now_) : 0u;
@@ -286,8 +231,10 @@ uint32_t Autoplay::FilterButtons(uint32_t buttons, const repsp::runtime::GuestMe
     last_now_ = now;
     has_last_now_ = true;
 
-    // Clear human lane buttons while preserving non-lane buttons (START, SELECT, etc.).
-    uint32_t out = buttons & ~AllLaneButtonsMask(mode, key_row, button_lane_count);
+    // Clear human lane buttons and stick while preserving non-lane buttons (START, SELECT, etc.).
+    uint32_t out = sample.buttons & ~AllLaneButtonsMask(mode, key_row, button_lane_count);
+    sample.lx = kAnalogNeutral;
+    sample.ly = kAnalogNeutral;
 
     for (uint32_t lane = 0; lane < button_lane_count; ++lane)
     {
@@ -417,7 +364,129 @@ uint32_t Autoplay::FilterButtons(uint32_t buttons, const repsp::runtime::GuestMe
         }
     }
 
-    return out;
+    sample.buttons = out;
+
+    // Analog lane (gear+5756 - 1): wiggle-stick input per docs/analysis/autoplay.md §6.
+    // Press sets RIGHT (255, 128); long notes alternate LEFT (0, 128) and RIGHT (255, 128)
+    // on each call so 0x088320A4's 30-frame decay timer keeps refreshing; taps return to neutral.
+    if (analog_holding_)
+    {
+        if (static_cast<uint64_t>(now) < analog_hold_until_)
+        {
+            sample.lx = analog_hold_left_next_ ? kAnalogLeft : kAnalogRight;
+            sample.ly = kAnalogNeutral;
+            analog_hold_left_next_ = !analog_hold_left_next_;
+        }
+        else
+        {
+            analog_holding_ = false;
+        }
+        return;
+    }
+
+    if (analog_pressed_prev_)
+    {
+        analog_pressed_prev_ = false;
+        return;
+    }
+
+    if (analog_lane < end_lane)
+    {
+        uint32_t channel = 0;
+        if (!ReadU32Checked(mem, gear_addr + kGearLaneChannelBaseOffset + analog_lane * 4u, channel))
+        {
+            return;
+        }
+        const uint32_t arr_addr = chart_addr + kChartChannelArrayBaseOffset + channel * kChartChannelEntryStride;
+        uint32_t arr_begin = 0;
+        uint32_t note_count = 0;
+        if (!ReadU32Checked(mem, arr_addr + 0u, arr_begin) ||
+            !ReadU32Checked(mem, arr_addr + 4u, note_count) ||
+            arr_begin == 0u || note_count == 0u || note_count > kMaxChannelNotes)
+        {
+            return;
+        }
+        const uint32_t byte_len = note_count * kNoteArrayElemSize;
+        if (!mem.IsValidAddress(arr_begin, byte_len))
+        {
+            return;
+        }
+
+        while (analog_cursor_ < note_count)
+        {
+            const uint32_t elem_addr = arr_begin + analog_cursor_ * kNoteArrayElemSize;
+            uint32_t note_addr = 0;
+            if (!ReadU32Checked(mem, elem_addr, note_addr) || note_addr == 0u ||
+                !mem.IsValidAddress(note_addr, 16u))
+            {
+                break;
+            }
+            uint8_t note_type = 0;
+            if (!ReadU8Checked(mem, note_addr + kNoteTypeOffset, note_type))
+            {
+                break;
+            }
+            if (note_type == kNoteTypeHeader)
+            {
+                ++analog_cursor_;
+                continue;
+            }
+            if (note_type != kNoteTypeNormal)
+            {
+                if (!logged_unsupported_type_)
+                {
+                    uint32_t note_time = 0;
+                    (void)ReadU32Checked(mem, note_addr + kNoteTimeOffset, note_time);
+                    std::fprintf(stderr,
+                                 "[autoplay] skipping unsupported note type %u (time=%u, lane=%u, ch=%u)\n",
+                                 static_cast<unsigned>(note_type),
+                                 note_time,
+                                 analog_lane,
+                                 channel);
+                    logged_unsupported_type_ = true;
+                }
+                ++analog_cursor_;
+                continue;
+            }
+
+            uint8_t note_judged = 0;
+            if (!ReadU8Checked(mem, note_addr + kNoteJudgedOffset, note_judged))
+            {
+                break;
+            }
+            if (note_judged != 0u)
+            {
+                ++analog_cursor_;
+                continue;
+            }
+
+            uint32_t note_time = 0;
+            uint16_t duration = 0;
+            if (!ReadU32Checked(mem, note_addr + kNoteTimeOffset, note_time) ||
+                !ReadU16Checked(mem, note_addr + kNoteDurationOffset, duration))
+            {
+                break;
+            }
+
+            if (static_cast<uint64_t>(note_time) <= threshold)
+            {
+                sample.lx = kAnalogRight;
+                sample.ly = kAnalogNeutral;
+                if (duration >= kLongNoteMinDuration)
+                {
+                    analog_holding_ = true;
+                    analog_hold_until_ = static_cast<uint64_t>(note_time) + static_cast<uint64_t>(duration);
+                    analog_hold_left_next_ = true;
+                }
+                else
+                {
+                    analog_pressed_prev_ = true;
+                }
+                ++analog_cursor_;
+            }
+            break;
+        }
+    }
 }
 
 } // namespace redmp2::app
