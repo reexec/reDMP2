@@ -964,6 +964,72 @@ int RunBoot(const std::filesystem::path& game_dir,
             });
     }
 
+    // Optional diagnostic: dump guest user RAM (0x08800000, 24 MiB) once at a target vblank.
+    auto read_env_str = [](const char* name) -> std::string
+    {
+#ifdef _WIN32
+        char* buf = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&buf, &len, name) != 0 || buf == nullptr)
+        {
+            return {};
+        }
+        std::string val(buf);
+        std::free(buf);
+        return val;
+#else
+        const char* val = std::getenv(name);
+        return val ? std::string(val) : std::string{};
+#endif
+    };
+    const std::string mem_dump_path = read_env_str("REDMP2_MEM_DUMP");
+    const std::string mem_dump_vblank_str = read_env_str("REDMP2_MEM_DUMP_VBLANK");
+    uint32_t mem_dump_vblank = 0;
+    if (!mem_dump_vblank_str.empty())
+    {
+        try
+        {
+            mem_dump_vblank = static_cast<uint32_t>(std::stoul(mem_dump_vblank_str));
+        }
+        catch (...)
+        {
+            mem_dump_vblank = 0;
+        }
+    }
+    std::atomic<bool> mem_dump_done{false};
+    uint32_t mem_dump_sub_id = 0;
+    if (!mem_dump_path.empty() && mem_dump_vblank > 0)
+    {
+        mem_dump_sub_id = repsp::runtime::GetVblankClock().Subscribe(
+            [&memory, &mem_dump_done, mem_dump_path, mem_dump_vblank](uint32_t vcount)
+            {
+                if (vcount >= mem_dump_vblank && !mem_dump_done.exchange(true))
+                {
+                    const uint8_t* ptr = memory.Translate(repsp::runtime::GuestMemory::kUserRamAddress);
+                    if (ptr != nullptr)
+                    {
+                        std::ofstream ofs(mem_dump_path, std::ios::binary | std::ios::trunc);
+                        if (ofs)
+                        {
+                            ofs.write(
+                                reinterpret_cast<const char*>(ptr),
+                                static_cast<std::streamsize>(repsp::runtime::GuestMemory::kUserRamSize));
+                            ofs.flush();
+                            std::cout << "[diag] Dumped guest user RAM (0x08800000, "
+                                      << repsp::runtime::GuestMemory::kUserRamSize
+                                      << " bytes) to " << mem_dump_path
+                                      << " at vblank " << vcount << "\n";
+                        }
+                        else
+                        {
+                            std::cerr << "[diag] Failed to open REDMP2_MEM_DUMP path: "
+                                      << mem_dump_path << "\n";
+                        }
+                    }
+                }
+            });
+    }
+
     repsp::runtime::GetNidRegistry().SetStopOnUnimplemented(true);
 
     if (!debug_crash_kind.empty())
@@ -989,6 +1055,10 @@ int RunBoot(const std::filesystem::path& game_dir,
     });
 
     repsp::runtime::GetNidRegistry().SetStopOnUnimplemented(false);
+    if (mem_dump_sub_id != 0)
+    {
+        repsp::runtime::GetVblankClock().Unsubscribe(mem_dump_sub_id);
+    }
     if (vblank_limit_sub_id != 0)
     {
         repsp::runtime::GetVblankClock().Unsubscribe(vblank_limit_sub_id);
