@@ -34,6 +34,21 @@
   * 롱노트 유지
   * 비플레이 장면에서는 손대지 않음
 
+### 3.1 1단계 리뷰 뒤 결정 (2026-11-23)
+
+분석은 [`docs/analysis/autoplay.md`](../analysis/autoplay.md) §6에 있다. 리뷰어는 `0x088320A4`의 방향 판정과 카운터·타이머 갱신을 생성 코드에서 확인했다.
+* 방향 전환이면 카운터 `+1`, 타이머 30
+* 같은 방향이면 타이머 `-1`, 0이면 카운터 0
+* 중립이면 타이머 `-2`
+
+판정은 카운터 `!= 0`만 본다. 아날로그 레인은 방향 입력이 아니라 "스틱을 흔드는" 입력이다. 그래서 §3의 "노트가 요구하는 방향"을 다음으로 바꾼다.
+
+* **누름**: 노트 프레임에 중립이 아닌 방향을 넣는다. 예: 오른쪽 `(255, 128)`. 직전 방향이 중립이면 전환이 되어 카운터가 0이 아니게 된다.
+* **유지(롱노트)**: 끝 시각까지 호출마다 방향을 오른쪽과 왼쪽 `(0, 128)`으로 번갈아 넣는다. 전환마다 타이머가 30으로 돌아가 카운터가 0이 되지 않는다.
+* **단타**: 누른 다음 호출에 중립 `(128, 128)`으로 돌린다.
+* **노트 전**: 중립을 유지한다. 앞 노트의 카운터가 다음 노트 전에 0으로 떨어져야 다음 노트가 일찍 판정되지 않는다. 중립에서는 최대 15프레임 안에 0이 된다.
+* 스틱 값은 샘플 필터(repsp #77)로 넣는다. 버튼도 같은 필터에서 정한다.
+
 ## 4. 검증
 
 1. 5B `sO mUCH iN LUV` NM: BREAK 0, 콤보가 노트 수와 같다.
@@ -78,6 +93,21 @@ Add a section to `docs/analysis/autoplay.md`, marking each item confirmed/inferr
   * tap press and return to neutral
   * long-note hold
   * no change outside the play scene
+
+### 3.1 Decisions after the phase 1 review (2026-11-23)
+
+The analysis is in [`docs/analysis/autoplay.md`](../analysis/autoplay.md) §6. The reviewer confirmed `0x088320A4`'s direction test and its counter/timer updates in the generated code:
+* a direction change adds 1 to the counter and sets the timer to 30
+* the same direction subtracts 1 from the timer, and the counter becomes 0 when the timer reaches 0
+* neutral subtracts 2 from the timer
+
+Judgement looks only at counter `!= 0`. The analog lane is not a direction input but a "wiggle the stick" input, so §3's "direction the note requires" becomes the following:
+
+* **Press**: on the note frame, set a non-neutral direction, for example right `(255, 128)`. Coming from neutral, that is a change, so the counter becomes nonzero.
+* **Hold (long note)**: until the end time, alternate right and left `(0, 128)` on each call. Every change resets the timer to 30, so the counter never reaches 0.
+* **Tap**: return to neutral `(128, 128)` on the next call.
+* **Before a note**: stay neutral. The previous note's counter must fall to 0 before the next note, or the next note is judged early. At neutral it reaches 0 within 15 frames.
+* Stick values go through the sample filter (repsp #77), which also sets the buttons.
 
 ## 4. Verification
 
