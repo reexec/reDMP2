@@ -1,5 +1,6 @@
 #include "autoplay.h"
 
+#include "repsp/hle/ctrl.h"
 #include "repsp/platform/input.h"
 #include "repsp/runtime/guest_memory.h"
 
@@ -120,6 +121,16 @@ struct SynthChartFixture
     }
 };
 
+uint32_t RunButtons(redmp2::app::Autoplay& ap, uint32_t buttons, const repsp::runtime::GuestMemory& mem)
+{
+    repsp::hle::ctrl::SceCtrlData s{};
+    s.buttons = buttons;
+    s.lx = kAnalogNeutral;
+    s.ly = kAnalogNeutral;
+    ap.FilterSample(s, mem);
+    return s.buttons;
+}
+
 } // namespace
 
 int main()
@@ -134,12 +145,12 @@ int main()
         SynthChartFixture fx;
         fx.WriteScene(mem, kGameplaySceneVtable, 4u, 0u);
         ap.SetEnabled(false);
-        PROBE_ASSERT(ap.FilterButtons(kPspCtrlLeft | kPspCtrlStart, mem) == (kPspCtrlLeft | kPspCtrlStart));
+        PROBE_ASSERT(RunButtons(ap, kPspCtrlLeft | kPspCtrlStart, mem) == (kPspCtrlLeft | kPspCtrlStart));
         PROBE_ASSERT(!ap.IsInGameplay());
 
         ap.SetEnabled(true);
         mem.WriteU32(SynthChartFixture::kSceneAddr, 0x08800000u); // non-gameplay vtable
-        PROBE_ASSERT(ap.FilterButtons(kPspCtrlLeft | kPspCtrlStart, mem) == (kPspCtrlLeft | kPspCtrlStart));
+        PROBE_ASSERT(RunButtons(ap, kPspCtrlLeft | kPspCtrlStart, mem) == (kPspCtrlLeft | kPspCtrlStart));
         PROBE_ASSERT(!ap.IsInGameplay());
     }
 
@@ -181,7 +192,7 @@ int main()
         {
             fx.SetNow(mem, t);
             const uint32_t in = kPspCtrlStart | kPspCtrlUp | kPspCtrlCircle;
-            const uint32_t out = ap.FilterButtons(in, mem);
+            const uint32_t out = RunButtons(ap, in, mem);
             PROBE_ASSERT(ap.IsInGameplay());
             PROBE_ASSERT((out & kPspCtrlStart) != 0u);
 
@@ -226,10 +237,10 @@ int main()
         {
             fx5.SetNow(mem, 100u + i * 50u);
             // Pass human SQUARE ([3]) + START: SQUARE must be cleared, START preserved.
-            const uint32_t out = ap.FilterButtons(kPspCtrlSquare | kPspCtrlStart, mem);
+            const uint32_t out = RunButtons(ap, kPspCtrlSquare | kPspCtrlStart, mem);
             PROBE_ASSERT(out == (expected5[i] | kPspCtrlStart));
             fx5.SetNow(mem, 100u + i * 50u + 16u);
-            PROBE_ASSERT(ap.FilterButtons(kPspCtrlSquare | kPspCtrlStart, mem) == kPspCtrlStart);
+            PROBE_ASSERT(RunButtons(ap, kPspCtrlSquare | kPspCtrlStart, mem) == kPspCtrlStart);
         }
 
         // Mode 2 (6B): LEFT, UP, RIGHT, SQUARE, TRIANGLE, CIRCLE
@@ -246,9 +257,9 @@ int main()
         for (uint32_t i = 0; i < 6u; ++i)
         {
             fx6.SetNow(mem, 100u + i * 50u);
-            PROBE_ASSERT(ap.FilterButtons(0u, mem) == expected6[i]);
+            PROBE_ASSERT(RunButtons(ap, 0u, mem) == expected6[i]);
             fx6.SetNow(mem, 100u + i * 50u + 16u);
-            PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+            PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
         }
 
         // Mode 3 (8B): L, LEFT, UP, RIGHT, SQUARE, TRIANGLE, CIRCLE, R
@@ -266,9 +277,9 @@ int main()
         for (uint32_t i = 0; i < 8u; ++i)
         {
             fx8.SetNow(mem, 100u + i * 50u);
-            PROBE_ASSERT(ap.FilterButtons(0u, mem) == expected8[i]);
+            PROBE_ASSERT(RunButtons(ap, 0u, mem) == expected8[i]);
             fx8.SetNow(mem, 100u + i * 50u + 16u);
-            PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+            PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
         }
 
         // Custom key-config test: remap 4B lane 0 (table[0]) from LEFT(7) to DOWN(6).
@@ -281,7 +292,7 @@ int main()
         fx_custom.SetLaneNotes(mem, 3u, 6u, {});
         ap.ResetState();
         fx_custom.SetNow(mem, 100u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == kPspCtrlDown);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == kPspCtrlDown);
     }
 
     // 4. Long notes (duration >= 7 at +14): held from start until start + duration, then released.
@@ -299,22 +310,22 @@ int main()
         ap.SetEnabled(true);
 
         fx.SetNow(mem, 80u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
         fx.SetNow(mem, 100u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == kPspCtrlUp);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == kPspCtrlUp);
         for (uint32_t t : {116u, 132u, 148u, 160u})
         {
             fx.SetNow(mem, t);
-            PROBE_ASSERT(ap.FilterButtons(0u, mem) == kPspCtrlUp);
+            PROBE_ASSERT(RunButtons(ap, 0u, mem) == kPspCtrlUp);
         }
         fx.SetNow(mem, 164u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
         fx.SetNow(mem, 180u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
         fx.SetNow(mem, 200u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == kPspCtrlUp);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == kPspCtrlUp);
         fx.SetNow(mem, 216u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
     }
 
     // 5. Pause: chart time stands still -> autoplay steps aside, then resumes.
@@ -330,20 +341,20 @@ int main()
 
         const uint32_t human = kPspCtrlUp | kPspCtrlCircle | kPspCtrlStart;
         fx.SetNow(mem, 100u);
-        PROBE_ASSERT((ap.FilterButtons(human, mem) & (kPspCtrlUp | kPspCtrlCircle)) == 0u);
+        PROBE_ASSERT((RunButtons(ap, human, mem) & (kPspCtrlUp | kPspCtrlCircle)) == 0u);
         uint32_t out = 0;
         for (uint32_t i = 0; i < kStalledCallsForPause; ++i)
         {
-            out = ap.FilterButtons(human, mem);
+            out = RunButtons(ap, human, mem);
         }
         PROBE_ASSERT(out == human);
-        PROBE_ASSERT(ap.FilterButtons(human, mem) == human);
+        PROBE_ASSERT(RunButtons(ap, human, mem) == human);
 
         bool pressed = false;
         for (uint32_t t = 116u; t <= 260u; t += 16u)
         {
             fx.SetNow(mem, t);
-            out = ap.FilterButtons(human, mem);
+            out = RunButtons(ap, human, mem);
             PROBE_ASSERT((out & (kPspCtrlUp | kPspCtrlCircle)) == 0u);
             pressed = pressed || ((out & kPspCtrlLeft) != 0u);
         }
@@ -369,19 +380,105 @@ int main()
         ap.ResetState();
         ap.SetEnabled(false);
         fx.SetNow(mem, 440u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
 
         // Enable autoplay mid-song at t=450: none of the judged notes (100, 200, 300) may be pressed.
         ap.SetEnabled(true);
         fx.SetNow(mem, 450u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
         fx.SetNow(mem, 480u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
         // At t=500, the first unjudged note is pressed once and released on the next call.
         fx.SetNow(mem, 500u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == kPspCtrlLeft);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == kPspCtrlLeft);
         fx.SetNow(mem, 516u);
-        PROBE_ASSERT(ap.FilterButtons(0u, mem) == 0u);
+        PROBE_ASSERT(RunButtons(ap, 0u, mem) == 0u);
+    }
+
+    // 7. Analog lane (gear+5756 - 1): non-gameplay passthrough, pre-note neutral clearing,
+    //    tap press RIGHT then neutral, long-note alternating RIGHT/LEFT then neutral, judged skip.
+    {
+        SynthChartFixture fx;
+        fx.WriteScene(mem, kGameplaySceneVtable, 5u, 1u); // 5B: button lanes 0..4, analog lane 5 (ch 9)
+        for (uint32_t i = 0; i < 5u; ++i)
+        {
+            fx.SetLaneNotes(mem, i, i + 1u, {});
+        }
+        fx.SetLaneNotes(mem, 5u, 9u, {
+            {0u, kNoteTypeHeader, 9u, 0u, 0u},
+            {50u, kNoteTypeNormal, 9u, 6u, 1u},     // already judged: skipped
+            {100u, kNoteTypeNormal, 9u, 6u, 0u},    // analog tap note
+            {300u, kNoteTypeNormal, 9u, 64u, 0u},   // analog long note (300..364)
+        });
+
+        // Non-gameplay scene leaves human stick untouched.
+        ap.ResetState();
+        ap.SetEnabled(true);
+        mem.WriteU32(SynthChartFixture::kSceneAddr, 0x08800000u);
+        {
+            repsp::hle::ctrl::SceCtrlData s{};
+            s.lx = 220u;
+            s.ly = 30u;
+            ap.FilterSample(s, mem);
+            PROBE_ASSERT(s.lx == 220u && s.ly == 30u);
+        }
+
+        // Restore PlayScene.
+        mem.WriteU32(SynthChartFixture::kSceneAddr, kGameplaySceneVtable);
+        ap.ResetState();
+        ap.SetEnabled(true);
+
+        auto run_stick = [&](uint32_t t, uint8_t in_lx, uint8_t in_ly)
+        {
+            fx.SetNow(mem, t);
+            repsp::hle::ctrl::SceCtrlData s{};
+            s.lx = in_lx;
+            s.ly = in_ly;
+            ap.FilterSample(s, mem);
+            return s;
+        };
+
+        // Before tap note (t=80): judged note at t=50 skipped, human stick cleared to neutral.
+        {
+            const auto s = run_stick(80u, 240u, 10u);
+            PROBE_ASSERT(s.lx == kAnalogNeutral && s.ly == kAnalogNeutral);
+        }
+        // Tap note at t=100: pressed RIGHT (255, 128), next call returns to neutral (128, 128).
+        {
+            const auto s = run_stick(100u, 10u, 240u);
+            PROBE_ASSERT(s.lx == kAnalogRight && s.ly == kAnalogNeutral);
+        }
+        {
+            const auto s = run_stick(116u, 10u, 240u);
+            PROBE_ASSERT(s.lx == kAnalogNeutral && s.ly == kAnalogNeutral);
+        }
+        // Before long note (advance in 16-tick steps up to 280): stays neutral throughout.
+        for (uint32_t t = 132u; t <= 280u; t += 16u)
+        {
+            const auto s = run_stick(t, 0u, 0u);
+            PROBE_ASSERT(s.lx == kAnalogNeutral && s.ly == kAnalogNeutral);
+        }
+        // Long note at t=300..364: RIGHT, then alternates LEFT / RIGHT / LEFT / RIGHT, then neutral at 364.
+        {
+            const auto s = run_stick(300u, 128u, 128u);
+            PROBE_ASSERT(s.lx == kAnalogRight && s.ly == kAnalogNeutral);
+        }
+        {
+            const auto s = run_stick(316u, 128u, 128u);
+            PROBE_ASSERT(s.lx == kAnalogLeft && s.ly == kAnalogNeutral);
+        }
+        {
+            const auto s = run_stick(332u, 128u, 128u);
+            PROBE_ASSERT(s.lx == kAnalogRight && s.ly == kAnalogNeutral);
+        }
+        {
+            const auto s = run_stick(348u, 128u, 128u);
+            PROBE_ASSERT(s.lx == kAnalogLeft && s.ly == kAnalogNeutral);
+        }
+        {
+            const auto s = run_stick(364u, 128u, 128u);
+            PROBE_ASSERT(s.lx == kAnalogNeutral && s.ly == kAnalogNeutral);
+        }
     }
 
     mem.Shutdown();

@@ -763,9 +763,9 @@ int RunBoot(const std::filesystem::path& game_dir,
         });
     }
     repsp::hle::ctrl::Register();
-    repsp::hle::ctrl::SetButtonFilter([&autoplay](uint32_t buttons) -> uint32_t
+    repsp::hle::ctrl::SetSampleFilter([&autoplay](repsp::hle::ctrl::SceCtrlData& sample)
     {
-        return autoplay.FilterButtons(buttons, repsp::runtime::GetGuestMemory());
+        autoplay.FilterSample(sample, repsp::runtime::GetGuestMemory());
     });
     if (!input_script.empty())
     {
@@ -916,7 +916,7 @@ int RunBoot(const std::filesystem::path& game_dir,
     {
         std::cerr << "[boot] Error: CreateThread failed: 0x" << std::hex << entry_tid << std::dec << "\n";
         repsp::hle::utility::SetDialogPolicy(nullptr);
-        repsp::hle::ctrl::SetButtonFilter(nullptr);
+        repsp::hle::ctrl::SetSampleFilter(nullptr);
         repsp::hle::ctrl::SetInputSource(nullptr);
         repsp::hle::utility::Shutdown();
         repsp::hle::mpeg::Shutdown();
@@ -1094,7 +1094,7 @@ int RunBoot(const std::filesystem::path& game_dir,
     const std::string utility_stats = repsp::hle::utility::FormatStats();
     const std::string wake_stats = repsp::runtime::GetScheduler().FormatWakeLatencyStats();
     repsp::hle::utility::SetDialogPolicy(nullptr);
-    repsp::hle::ctrl::SetButtonFilter(nullptr);
+    repsp::hle::ctrl::SetSampleFilter(nullptr);
     repsp::hle::ctrl::SetInputSource(nullptr);
     repsp::hle::ctrl::StopInputRecording();
     repsp::hle::utility::Shutdown();

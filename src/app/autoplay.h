@@ -5,6 +5,11 @@
 #include <atomic>
 #include <cstdint>
 
+namespace repsp::hle::ctrl
+{
+struct SceCtrlData;
+}
+
 namespace repsp::runtime
 {
 class GuestMemory;
@@ -49,6 +54,11 @@ inline constexpr uint8_t kNoteTypeHeader = 4u;                      // vblank 42
 
 inline constexpr uint32_t kMaxLanes = 8u;
 inline constexpr uint8_t kMaxMode = 3u;
+// Analog stick values for 0x088320A4 (docs/analysis/autoplay.md §6.1):
+// 64..192 is neutral, Lx >= 193 is RIGHT, Lx < 64 is LEFT.
+inline constexpr uint8_t kAnalogNeutral = 128u;
+inline constexpr uint8_t kAnalogRight = 255u;
+inline constexpr uint8_t kAnalogLeft = 0u;
 // Filter calls with the chart time unchanged before autoplay treats the game
 // as paused and hands the buttons over (about 3 frames).
 inline constexpr uint32_t kStalledCallsForPause = 3u;
@@ -56,8 +66,8 @@ inline constexpr uint32_t kStalledCallsForPause = 3u;
 
 // Input-stage autoplay controller for DJ Max Portable 2.
 // Reads the live chart state and key-config table from guest memory inside
-// sceCtrlReadBuffer* and synthesizes PSP lane button presses when notes reach
-// the judgement line.
+// sceCtrlReadBuffer* and synthesizes PSP lane button and analog stick inputs
+// when notes reach the judgement line.
 class Autoplay
 {
 public:
@@ -65,8 +75,8 @@ public:
     bool IsEnabled() const;
     bool IsInGameplay() const;
 
-    // Button filter callback invoked on the guest thread from sceCtrlReadBuffer*.
-    uint32_t FilterButtons(uint32_t buttons, const repsp::runtime::GuestMemory& mem);
+    // Per-sample filter callback invoked on the guest thread from sceCtrlReadBuffer*.
+    void FilterSample(repsp::hle::ctrl::SceCtrlData& sample, const repsp::runtime::GuestMemory& mem);
 
     // Resets per-song lane cursors and tracking state.
     void ResetState();
@@ -80,11 +90,6 @@ private:
                                        const std::array<uint8_t, autoplay_layout::kKeyConfigModeStride>& key_row,
                                        uint32_t lane_count);
 
-    void CheckAnalogLaneNotesOnce(const repsp::runtime::GuestMemory& mem,
-                                  uint32_t gear_addr,
-                                  uint32_t chart_addr,
-                                  uint32_t analog_lane);
-
     std::atomic<bool> enabled_{false};
     std::atomic<bool> in_gameplay_{false};
 
@@ -97,12 +102,17 @@ private:
     // pause menu is driven by the same lane buttons, so autoplay steps aside.
     uint32_t stalled_calls_ = 0;
     bool logged_unsupported_type_ = false;
-    bool checked_analog_lane_ = false;
 
     std::array<uint32_t, autoplay_layout::kMaxLanes> lane_cursor_{};
     std::array<bool, autoplay_layout::kMaxLanes> lane_pressed_prev_{};
     std::array<bool, autoplay_layout::kMaxLanes> lane_holding_{};
     std::array<uint64_t, autoplay_layout::kMaxLanes> lane_hold_until_{};
+
+    uint32_t analog_cursor_ = 0;
+    bool analog_pressed_prev_ = false;
+    bool analog_holding_ = false;
+    uint64_t analog_hold_until_ = 0;
+    bool analog_hold_left_next_ = false;
 };
 
 } // namespace redmp2::app
