@@ -130,6 +130,58 @@ flowchart LR
 
 ---
 
+## 6. 아날로그 레인 입력 및 판정 분석 (issue #19) (**확인됨**)
+
+```mermaid
+flowchart TD
+    IN["Lx, Ly (0..255)"] --> AX{"abs(Lx-128) > abs(Ly-128)?"}
+    AX -->|예: X축 우세| XTH["Lx >= 193 → dir=0 (RIGHT)<br/>Lx < 64 → dir=2 (LEFT)<br/>64..192 → dir=4 (NEUTRAL)"]
+    AX -->|아니오: Y축 우세/동률| YTH["Ly >= 193 → dir=1 (DOWN)<br/>Ly < 64 → dir=3 (UP)<br/>64..192 → dir=4 (NEUTRAL)"]
+    XTH --> CMP{"dir == 4 (NEUTRAL)?"}
+    YTH --> CMP
+    CMP -->|예| DEC2["timer(0x08976850) < 2 → active(0x08976851)=0<br/>timer >= 2 → timer -= 2"]
+    CMP -->|아니오| CHG{"dir != prev_dir(0x088CA145)?"}
+    CHG -->|예: 방향 전환| ACT["active = min(active+1, 255)<br/>timer = 30"]
+    CHG -->|아니오: 같은 방향 유지| DEC1["timer == 0 → active = 0<br/>timer > 0 → timer -= 1"]
+```
+
+### 6.1 `0x088320A4(Lx, Ly)`의 `0x08976851` 갱신 규칙 (**확인됨**)
+* 근거: `psp_func_088320A4` (`dmp2_funcs_029.c:3409`–`3663`).
+* **우세 축 및 방향 판별**: `abs(Lx - 128)`과 `abs(Ly - 128)`(`0x0889D35C`)을 비교한다(`0x088320DC`: `slt $at, dy, dx`).
+  * `dx > dy` (X축 우세): `Lx >= 193` → `dir = 0`(우), `Lx < 64` → `dir = 2`(좌), `64 <= Lx <= 192` → `dir = 4`(중립).
+  * `dy >= dx` (Y축 우세 또는 동률): `Ly >= 193` → `dir = 1`(하), `Ly < 64` → `dir = 3`(상), `64 <= Ly <= 192` → `dir = 4`(중립).
+  * 계산된 `dir`은 **`0x088CA145`** (`0x088D0000 - 24251`, `u8`)에 저장되어 다음 호출의 `prev_dir`로 쓰인다.
+* **활동 카운터(`0x08976851`)와 감쇠 타이머(`0x08976850`)**:
+  * `0x08976851`은 방향 비트마스크가 아니라 **스틱 회전/움직임 활동 카운터(`0` = 비활성, `1..255` = 활성)** 다.
+  * **중립(`dir == 4`)**: `timer < 2`이면 `0x08976851 = 0`, 아니면 `timer -= 2` (빠른 감쇠; `timer = 30`에서 약 15프레임 뒤 0).
+  * **방향 전환(`dir != 4 && dir != prev_dir`)**: `0x08976851`을 1 증가(최대 255)하고 **`timer = 30`** 으로 재설정한다.
+  * **같은 방향 유지(`dir != 4 && dir == prev_dir`)**: `timer == 0`이면 `0x08976851 = 0`, 아니면 `timer -= 1` (**30프레임 이상 같은 방향만 고정하면 비활성화됨**).
+
+### 6.2 판정 함수의 아날로그 레인 분기 (**확인됨**)
+* 근거: `psp_func_088585E8` (`dmp2_funcs_050.c:783`, 유지 판정), `psp_func_08858624` (`dmp2_funcs_050.c:846`, 눌림 판정), `psp_func_08858CFC` (`L_08858EFC`, `L_08859194`, `L_08859394`).
+* **`is_analog != 0`일 때의 눌림·유지 조건**:
+  * 단타 눌림(`0x0885939C`), 롱노트 시작(`0x0885862C`), 롱노트 유지(`0x088585F0`) 모두 **`analog_bits (0x08976851) != 0`** 여부만 검사한다(`G + 125`의 이전 값과 엣지 비교를 하지 않는다).
+  * 롱노트 도중(`now < note_time + duration - 1`, `0x08858F3C`) `0x08976851 == 0`이 되면 BREAK 처리된다(`0x08858F68` → `0x088587B0`).
+  * 롱노트 끝 시각(`now >= note_time + duration - 1`, `0x088590FC`)까지 `0x08976851 != 0`을 유지하면 자동 완료된다.
+
+### 6.3 방향 요구 여부 및 아날로그 롱노트 (**확인됨**)
+* **방향 요구 여부**: **없음**. `0x08976851` 자체가 방향을 구분하지 않으며, 판정 함수도 노트의 방향 필드를 읽지 않는다. 중립이 아닌 어느 방향(`dir ∈ {0, 1, 2, 3}`)으로든 `dir != prev_dir` 전환을 일으키면 판정된다.
+* **아날로그 롱노트**: **존재한다**(아래 5B 실측의 3개 노트가 모두 `duration >= 7` 롱노트).
+  * **유지 조건**: `0x088320A4`의 30프레임 감쇠 타이머 때문에 한 방향으로만 고정하면 긴 롱노트(예: `dur = 624`) 도중 `0x08976851`이 `0`으로 떨어져 BREAK가 난다. 따라서 2단계 구현에서는 아날로그 롱노트 유지 중 **스틱 방향을 주기적으로 전환**(예: 매 호출 또는 수 프레임마다 우 `(255,128)` ↔ 좌 `(0,128)` 교대, 또는 4방향 순환)하여 `timer = 30`을 계속 갱신해야 한다.
+
+### 6.4 5B `sO mUCH iN LUV` NM 실측 (`mem_5b_4200.bin`, vblank 4200) (**확인됨**)
+* 측정 조건: `mode = 1` (5B), `now = 5332`, `total_lanes = 6`, `analog_lane = 5`, 채널 `ch = 9`.
+* 채널 배열(`C + 8368 + 9 * 12`): `begin = 0x08EABF20`, `count = 4`, `capacity = 5`.
+
+| 인덱스 | 노트 주소 | `idx` | `time (+0)` | `type (+4)` | `ch (+5)` | `judged (+6)` | `duration (+14)` | 비고 |
+|---:|---|---:|---:|---:|---:|---:|---:|---|
+| `[0]` | `0x08E63EE4` | `5` | `0` | `4` | `9` | `0` | `0` | 채널 헤더 |
+| `[1]` | `0x08E63F04` | `6` | `816` | `1` | `9` | `1` | **`624`** | 아날로그 롱노트 (`816..1440`) |
+| `[2]` | `0x08E67044` | `400` | `34944` | `1` | `9` | `0` | **`144`** | 아날로그 롱노트 (`34944..35088`) |
+| `[3]` | `0x08E68C64` | `625` | `52992` | `1` | `9` | `0` | **`384`** | 아날로그 롱노트 (`52992..53376`) |
+
+---
+
 # DMP2 Memory Structure Analysis for Autoplay (issue #17)
 
 * Target executable: `BOOT.BIN` (`ULKS-46116`, v1.09, `ET_EXEC`, base `0x08804000`, SHA-1 `1a5c904989d430588da9653acad4b6c5cdab2885`)
@@ -256,3 +308,55 @@ flowchart LR
     * Measured samples at vblank 4200:
       * Tap note: `ch=3 [1]` (`0x08E63F44`) `t=2976, type=1, ch=3, judged=1, dur=6`
       * Long note: `ch=5 [52]` (`0x08E65A44`) `t=40272, type=1, ch=5, judged=0, dur=288`
+
+---
+
+## 6. Analog-Lane Input and Judgement Analysis (issue #19) (**confirmed**)
+
+```mermaid
+flowchart TD
+    IN["Lx, Ly (0..255)"] --> AX{"abs(Lx-128) > abs(Ly-128)?"}
+    AX -->|Yes: X dominant| XTH["Lx >= 193 → dir=0 (RIGHT)<br/>Lx < 64 → dir=2 (LEFT)<br/>64..192 → dir=4 (NEUTRAL)"]
+    AX -->|No: Y dominant/tie| YTH["Ly >= 193 → dir=1 (DOWN)<br/>Ly < 64 → dir=3 (UP)<br/>64..192 → dir=4 (NEUTRAL)"]
+    XTH --> CMP{"dir == 4 (NEUTRAL)?"}
+    YTH --> CMP
+    CMP -->|Yes| DEC2["timer(0x08976850) < 2 → active(0x08976851)=0<br/>timer >= 2 → timer -= 2"]
+    CMP -->|No| CHG{"dir != prev_dir(0x088CA145)?"}
+    CHG -->|Yes: direction changed| ACT["active = min(active+1, 255)<br/>timer = 30"]
+    CHG -->|No: same direction held| DEC1["timer == 0 → active = 0<br/>timer > 0 → timer -= 1"]
+```
+
+### 6.1 How `0x088320A4(Lx, Ly)` Updates `0x08976851` (**confirmed**)
+* Evidence: `psp_func_088320A4` (`dmp2_funcs_029.c:3409`–`3663`).
+* **Dominant-axis and direction rule**: compares `dx = abs(Lx - 128)` and `dy = abs(Ly - 128)` (`0x0889D35C`, `0x088320DC: slt $at, dy, dx`).
+  * `dx > dy` (X-axis dominant): `Lx >= 193` → `dir = 0` (RIGHT), `Lx < 64` → `dir = 2` (LEFT), `64 <= Lx <= 192` → `dir = 4` (NEUTRAL).
+  * `dy >= dx` (Y-axis dominant or tie): `Ly >= 193` → `dir = 1` (DOWN), `Ly < 64` → `dir = 3` (UP), `64 <= Ly <= 192` → `dir = 4` (NEUTRAL).
+  * Stores `dir` into **`0x088CA145`** (`0x088D0000 - 24251`, `u8`) as `prev_dir` for the next call.
+* **Activity counter (`0x08976851`) and decay timer (`0x08976850`)**:
+  * `0x08976851` is **not** a direction bitmask; it is a **motion/spin activity counter** (`0` = inactive, `1..255` = active).
+  * **Neutral (`dir == 4`)**: if `timer < 2`, sets `0x08976851 = 0`; otherwise `timer -= 2` (fast decay: ~15 frames from 30 to 0).
+  * **Direction change (`dir != 4 && dir != prev_dir`)**: increments `0x08976851` (capped at 255) and resets **`timer = 30`**.
+  * **Same direction held (`dir != 4 && dir == prev_dir`)**: if `timer == 0`, sets `0x08976851 = 0`; otherwise `timer -= 1` (**holding one constant direction expires after 30 frames**).
+
+### 6.2 Judgement Analog-Lane Branch (**confirmed**)
+* Evidence: `psp_func_088585E8` (`dmp2_funcs_050.c:783`, hold check), `psp_func_08858624` (`dmp2_funcs_050.c:846`, press check), `psp_func_08858CFC` (`L_08858EFC`, `L_08859194`, `L_08859394`).
+* **Press and hold condition when `is_analog != 0`**:
+  * Tap press (`0x0885939C`), long-note start (`0x0885862C`), and long-note hold (`0x088585F0`) all check only **`analog_bits (0x08976851) != 0`** (no rising-edge check against `G + 125`).
+  * Dropping `0x08976851` to `0` while `now < note_time + duration - 1` (`0x08858F3C`) breaks the long note (`0x08858F68` → `0x088587B0`).
+  * Keeping `0x08976851 != 0` through `now >= note_time + duration - 1` (`0x088590FC`) completes the long note automatically.
+
+### 6.3 Direction Requirement and Analog Long Notes (**confirmed**)
+* **Direction requirement**: **none**. Neither `0x08976851` nor the judgement functions inspect a direction; any non-neutral direction transition (`dir ∈ {0, 1, 2, 3}` with `dir != prev_dir`) activates the lane.
+* **Analog long notes**: **exist** (all 3 analog notes in the 5B dump below have `duration >= 7`).
+  * **Hold condition**: because `0x088320A4` decays `timer` to `0` after 30 frames of holding a single direction, Phase 2 must **periodically change the stick direction** while holding an analog long note (e.g., alternating RIGHT `(255, 128)` and LEFT `(0, 128)`, or cycling the 4 directions) to keep refreshing `timer = 30` and `0x08976851 != 0`.
+
+### 6.4 Live Measurement on 5B `sO mUCH iN LUV` NM (`mem_5b_4200.bin`, vblank 4200) (**confirmed**)
+* Setup: `mode = 1` (5B), `now = 5332`, `total_lanes = 6`, `analog_lane = 5`, channel `ch = 9`.
+* Channel array (`C + 8368 + 9 * 12`): `begin = 0x08EABF20`, `count = 4`, `capacity = 5`.
+
+| Index | Note addr | `idx` | `time (+0)` | `type (+4)` | `ch (+5)` | `judged (+6)` | `duration (+14)` | Notes |
+|---:|---|---:|---:|---:|---:|---:|---:|---|
+| `[0]` | `0x08E63EE4` | `5` | `0` | `4` | `9` | `0` | `0` | Channel header |
+| `[1]` | `0x08E63F04` | `6` | `816` | `1` | `9` | `1` | **`624`** | Analog long note (`816..1440`) |
+| `[2]` | `0x08E67044` | `400` | `34944` | `1` | `9` | `0` | **`144`** | Analog long note (`34944..35088`) |
+| `[3]` | `0x08E68C64` | `625` | `52992` | `1` | `9` | `0` | **`384`** | Analog long note (`52992..53376`) |
