@@ -45,6 +45,7 @@
 #include <repsp/platform/crash_handler.h>
 #include <repsp/platform/display.h>
 #include <repsp/platform/overlay.h>
+#include "autoplay.h"
 #include "settings.h"
 #include "settings_ui.h"
 #include <repsp/platform/guarded_run.h>
@@ -90,6 +91,7 @@ void PrintUsage(const char* prog)
               << "  --audio-latency-ms <n> Target host audio buffer depth in ms (default: 20)\n"
               << "  --max-vblanks <n>      Stop execution after <n> VBlanks (0 = unlimited)\n"
               << "  --input-script <path>  Deterministic controller script (<vblank> <button names>)\n"
+              << "  --autoplay             Enable input-stage autoplay for this run (not saved)\n"
               << "  --save-dir <path>      Directory for sceUtility savedata slots (default: user data/savedata)\n"
               << "  --dialog-answer <ans>  Auto answer for Yes/No utility dialogs: yes or no (default: yes)\n"
               << "  --codec-plugin <path>  Path to optional codec plugin shared library\n"
@@ -596,7 +598,8 @@ int RunBoot(const std::filesystem::path& game_dir,
             bool no_input_record,
             const std::string& debug_crash_kind,
             bool scale_explicit,
-            const std::string* post_shader_cli)
+            const std::string* post_shader_cli,
+            bool autoplay_cli)
 {
     std::vector<InputScriptEntry> input_script;
     if (!input_script_path.empty())
@@ -719,6 +722,9 @@ int RunBoot(const std::filesystem::path& game_dir,
         use_gl = false;
     }
 
+    redmp2::app::Autoplay autoplay;
+    autoplay.SetEnabled(autoplay_cli);
+
     std::unique_ptr<redmp2::SettingsUi> settings_ui;
     if (use_gl && !headless)
     {
@@ -747,7 +753,7 @@ int RunBoot(const std::filesystem::path& game_dir,
         build_info.commit = REDMP2_GIT_COMMIT;
         build_info.game_id = idResult.disc_id;
         build_info.game_title = idResult.title;
-        settings_ui = std::make_unique<redmp2::SettingsUi>(std::move(build_info), settings, &settings_file);
+        settings_ui = std::make_unique<redmp2::SettingsUi>(std::move(build_info), settings, &settings_file, &autoplay);
         repsp::platform::SetOverlayBuilder([&settings_ui]()
         {
             if (settings_ui)
@@ -757,6 +763,10 @@ int RunBoot(const std::filesystem::path& game_dir,
         });
     }
     repsp::hle::ctrl::Register();
+    repsp::hle::ctrl::SetButtonFilter([&autoplay](uint32_t buttons) -> uint32_t
+    {
+        return autoplay.FilterButtons(buttons, repsp::runtime::GetGuestMemory());
+    });
     if (!input_script.empty())
     {
         repsp::hle::ctrl::SetInputSource([input_script](uint32_t vcount)
@@ -906,6 +916,7 @@ int RunBoot(const std::filesystem::path& game_dir,
     {
         std::cerr << "[boot] Error: CreateThread failed: 0x" << std::hex << entry_tid << std::dec << "\n";
         repsp::hle::utility::SetDialogPolicy(nullptr);
+        repsp::hle::ctrl::SetButtonFilter(nullptr);
         repsp::hle::ctrl::SetInputSource(nullptr);
         repsp::hle::utility::Shutdown();
         repsp::hle::mpeg::Shutdown();
@@ -964,6 +975,72 @@ int RunBoot(const std::filesystem::path& game_dir,
             });
     }
 
+    // Optional diagnostic: dump guest user RAM (0x08800000, 24 MiB) once at a target vblank.
+    auto read_env_str = [](const char* name) -> std::string
+    {
+#ifdef _WIN32
+        char* buf = nullptr;
+        size_t len = 0;
+        if (_dupenv_s(&buf, &len, name) != 0 || buf == nullptr)
+        {
+            return {};
+        }
+        std::string val(buf);
+        std::free(buf);
+        return val;
+#else
+        const char* val = std::getenv(name);
+        return val ? std::string(val) : std::string{};
+#endif
+    };
+    const std::string mem_dump_path = read_env_str("REDMP2_MEM_DUMP");
+    const std::string mem_dump_vblank_str = read_env_str("REDMP2_MEM_DUMP_VBLANK");
+    uint32_t mem_dump_vblank = 0;
+    if (!mem_dump_vblank_str.empty())
+    {
+        try
+        {
+            mem_dump_vblank = static_cast<uint32_t>(std::stoul(mem_dump_vblank_str));
+        }
+        catch (...)
+        {
+            mem_dump_vblank = 0;
+        }
+    }
+    std::atomic<bool> mem_dump_done{false};
+    uint32_t mem_dump_sub_id = 0;
+    if (!mem_dump_path.empty() && mem_dump_vblank > 0)
+    {
+        mem_dump_sub_id = repsp::runtime::GetVblankClock().Subscribe(
+            [&memory, &mem_dump_done, mem_dump_path, mem_dump_vblank](uint32_t vcount)
+            {
+                if (vcount >= mem_dump_vblank && !mem_dump_done.exchange(true))
+                {
+                    const uint8_t* ptr = memory.Translate(repsp::runtime::GuestMemory::kUserRamAddress);
+                    if (ptr != nullptr)
+                    {
+                        std::ofstream ofs(mem_dump_path, std::ios::binary | std::ios::trunc);
+                        if (ofs)
+                        {
+                            ofs.write(
+                                reinterpret_cast<const char*>(ptr),
+                                static_cast<std::streamsize>(repsp::runtime::GuestMemory::kUserRamSize));
+                            ofs.flush();
+                            std::cout << "[diag] Dumped guest user RAM (0x08800000, "
+                                      << repsp::runtime::GuestMemory::kUserRamSize
+                                      << " bytes) to " << mem_dump_path
+                                      << " at vblank " << vcount << "\n";
+                        }
+                        else
+                        {
+                            std::cerr << "[diag] Failed to open REDMP2_MEM_DUMP path: "
+                                      << mem_dump_path << "\n";
+                        }
+                    }
+                }
+            });
+    }
+
     repsp::runtime::GetNidRegistry().SetStopOnUnimplemented(true);
 
     if (!debug_crash_kind.empty())
@@ -989,6 +1066,10 @@ int RunBoot(const std::filesystem::path& game_dir,
     });
 
     repsp::runtime::GetNidRegistry().SetStopOnUnimplemented(false);
+    if (mem_dump_sub_id != 0)
+    {
+        repsp::runtime::GetVblankClock().Unsubscribe(mem_dump_sub_id);
+    }
     if (vblank_limit_sub_id != 0)
     {
         repsp::runtime::GetVblankClock().Unsubscribe(vblank_limit_sub_id);
@@ -1013,6 +1094,7 @@ int RunBoot(const std::filesystem::path& game_dir,
     const std::string utility_stats = repsp::hle::utility::FormatStats();
     const std::string wake_stats = repsp::runtime::GetScheduler().FormatWakeLatencyStats();
     repsp::hle::utility::SetDialogPolicy(nullptr);
+    repsp::hle::ctrl::SetButtonFilter(nullptr);
     repsp::hle::ctrl::SetInputSource(nullptr);
     repsp::hle::ctrl::StopInputRecording();
     repsp::hle::utility::Shutdown();
@@ -1190,6 +1272,7 @@ int main(int argc, char* argv[])
     bool scale_explicit = false;
     std::string post_shader_cli;
     bool has_post_shader_cli = false;
+    bool autoplay_cli = false;
     uint32_t max_vblanks = 0;
     uint32_t audio_latency_ms = 20;
 
@@ -1346,6 +1429,10 @@ int main(int argc, char* argv[])
             post_shader_cli = std::move(val);
             has_post_shader_cli = true;
         }
+        else if (opt == "--autoplay")
+        {
+            autoplay_cli = true;
+        }
         else if (opt == "--max-vblanks")
         {
             if (i + 1 >= argc)
@@ -1431,11 +1518,12 @@ int main(int argc, char* argv[])
                                      : repsp::hle::utility::DialogAnswer::kNo,
                    codec_plugin_path, no_codec_plugin, audio_latency_ms,
                    crash_dir, no_input_record, debug_crash_kind, scale_explicit,
-                   has_post_shader_cli ? &post_shader_cli : nullptr);
+                   has_post_shader_cli ? &post_shader_cli : nullptr, autoplay_cli);
 #else
     (void)scale_explicit;
     (void)post_shader_cli;
     (void)has_post_shader_cli;
+    (void)autoplay_cli;
     (void)headless;
     (void)use_gl;
     (void)scale;
