@@ -5,6 +5,14 @@
 * 분석: [autoplay.md](../analysis/autoplay.md) (§6)
 * 브랜치: `i019-analog-autoplay` (개발·검증은 `third_party/repsp`를 `i77-sample-filter` 작업 트리로 둔 채 수행했으며, 서브모듈 포인터는 커밋하지 않음)
 
+
+## 리뷰어 측정: 느린 프레임에서의 한계
+
+* 리뷰어가 같은 4B 곡을 headless로 두 번 더 돌렸다. 프레임 간격이 평균 약 65 ms로 느렸고, 결과는 `BREAK 5`와 `BREAK 21`이었다(둘 다 STAGE CLEARED).
+* GL 창 모드(평균 21.8 ms)에서는 콤보가 끊기지 않고 166까지 MAX 100%로 이어졌다.
+* 원인: 단타는 누름 → 뗌에 호출 두 번이 필요하다. 프레임이 65 ms면 130 ms가 되어, 같은 레인의 촘촘한 노트 간격보다 길어진다. 버튼 레인 로직은 v0.0.9와 같다(이번 변경과 무관).
+* 한계: 프레임이 크게 떨어지는 환경에서는 자동 플레이도 노트를 놓칠 수 있다. 보통 창 모드(60 fps)에서는 문제없다.
+
 ---
 
 ## 1. 단위별 변경 요약
@@ -117,3 +125,11 @@ All runs placed `--save-dir`, `--crash-dir`, and `REPSP_FRAME_DUMP` outside the 
 | **5B** | `sO mUCH iN LUV` NM | `12500` | `STAGE CLEARED!!` / `COMBO 758` / `BREAK 0` / `JUDGMENT 99.7%` / `SCORE 57624` / `GOLD 1748` / `A+` (`frame_4730.bmp`) | All 3 analog long notes succeeded (was `COMBO 449` / `BREAK 3` in #17) | `0` / `0` |
 | **4B** | `Ladymade Star` NM | `11800` | `STAGE CLEARED!!` / `COMBO 302` / `BREAK 0` / `JUDGMENT 100.0%` / `SCORE 19400` / `GOLD 1750` / `S` (`frame_4550.bmp`) | Regression pass (`interval mean=40.50 ms`, 0 GE runs `>=50 ms`) | `0` / `0` |
 | **6B** | `Stay with me` NM | `12500` | `STAGE CLEARED!!` / `COMBO 345` / `BREAK 0` / `JUDGMENT 99.3%` / `SCORE 22499` / `GOLD 1467` / `A+` (`MAX COMBO`, `frame_5350.bmp`) | Regression pass (`interval mean=35.58 ms`, 0 GE runs `>=50 ms`) | `0` / `0` |
+
+
+## Reviewer measurement: limits with slow frames
+
+* The reviewer ran the same 4B song headless twice more. Frames averaged about 65 ms, and the results were `BREAK 5` and `BREAK 21` (both STAGE CLEARED).
+* In GL windowed mode (mean 21.8 ms) the combo ran unbroken to 166 at MAX 100%.
+* Cause: a tap needs two calls, press then release. At 65 ms per frame that is 130 ms, longer than the gap between dense notes on one lane. The button-lane logic is the same as v0.0.9 (unrelated to this change).
+* Limit: where the frame rate drops sharply, autoplay can miss notes too. Normal windowed play (60 fps) is fine.
