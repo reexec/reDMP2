@@ -60,5 +60,5 @@ if errorlevel 1 exit /b %errorlevel%
 :done
 echo.
 echo Built: %BUILD_DIR%\%CONFIG%\redmp2.exe
-echo Run:   %BUILD_DIR%\%CONFIG%\redmp2.exe roms
+echo Run:   %BUILD_DIR%\%CONFIG%\redmp2.exe roms  (or roms\ULKS46116)
 exit /b 0
