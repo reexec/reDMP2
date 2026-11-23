@@ -16,7 +16,7 @@
    * `sceUmdUser`: `sceUmdCheckMedium`(`0x46EBB729`, `0x088C0A08`), `sceUmdReplacePermit`(`0xCBE9F02A`, `0x088C0A40`), `sceUmdReplaceProhibit`(`0x87533940`, `0x088C0A28`).
 3. **교체된 DMP1 디스크에서 `PARAM.SFO`뿐 아니라 `all.mp`·`all2.mp`도 열어 읽음(확인됨)**: 설계 2절의 기존 추정("`PARAM.SFO`만 읽는다")과 달리, DMP2는 `ULKS46050` 확인 직후 `0x0886EB94` → `0x08815100`으로 교체된 DMP1 UMD의 `all.mp`와 `all2.mp`를 실제로 마운트한다. DMP1 덤프(`roms/ULKS46050/PSP_GAME/USRDIR/`)에도 `all.mp`와 `all2.mp`가 존재한다.
 4. **DMP2는 UMD 교체 허용 전에 열린 아카이브 핸들을 스스로 닫음(확인됨)**: `CLinkDiscScene::Init`(`0x0886D89C`)의 `0x0886EC38`과 DMP2 복귀 시 `0x0886ECA8`이 `0x08815164`로 열려 있던 `all.mp`/`all2.mp` 핸들을 먼저 닫고 교체 뒤 다시 연다.
-5. **`ms0:/PSP/SAVEDATA`와 `sceUtility` 저장 경로가 현재 분리되어 있음(확인됨)**: `src/app/main.cpp`에서 `ms0:`은 `<user_data>/ms0`에, `sceUtility`는 `--save-dir`(기본 `<user_data>/savedata`)에 매핑된다. 링크 디스크는 `sceUtilitySavedata`로 쓴 `ULKS46116DATA0/linkdisc_game.mp`를 플레이 장면에서 `ms0:/PSP/SAVEDATA/ULKS46116DATA0/linkdisc_game.mp`로 직접 읽으므로 두 경로를 일치시켜야 한다.
+5. **`ms0:/PSP/SAVEDATA`와 `sceUtility` 저장 경로 분리(확인됨, 3단계에서 통합)**: 1단계 시점 `src/app/main.cpp`에서 `ms0:`은 `<user_data>/ms0`에, `sceUtility`는 `--save-dir`(기본 `<user_data>/savedata`)에 매핑되어 있었다. 실측(`REPSP_HLE_TRACE=1`) 결과 링크 데이터는 `sceIoOpen` 직접 접근이 아니라 `sceUtilitySavedata`를 통해 `ULKS46116DATA0/SD2.BIN`(2,272,173 B)과 `ULKS46116DATA1/SD3.BIN`(484,356 B)으로 읽고 쓰지만, `sceIoDevctl("ms0:", 0x02425818)` 여유 공간 조회와 세이브 저장 위치를 하나의 메모리 스틱 루트(`--save-dir` → `<dir>/PSP/SAVEDATA`)로 맞추는 것이 PSP 규약에 맞다.
 
 ---
 
@@ -127,18 +127,18 @@ stateDiagram-v2
 
 * **상태**: `linkdisc_*.mp` 추출 시점·크기·원본은 **확인됨**. 세이브(`SD.BIN`) 기록 여부는 **미확정**(교체 모델 뒤 확인).
 
-* **쓰는 시점**: DMP2로 되돌린 뒤가 아니라, **UMD 교체 전**(상태 `1`~`3`, 아직 DMP2 UMD가 꽂혀 있는 시점)에 DMP2 아카이브에서 메모리 스틱(`ULKS46116DATA0`)으로 꺼내 둔다(**확인됨**).
-  * 상태 `1`(`0x0886D9F0`): `0x088BCE58` → `0x088BD074`(`sceUtilitySavedata mode 12`)로 기존 파일 존재 여부를 확인한다. 이미 있으면 상태 `2`~`3`을 건너뛰고 상태 `4`로 간다.
-  * 상태 `2`(`0x0886DA70`): `sceIoDevctl("ms0:", 0x02425818, ...)`로 여유 공간 `0x00300000`(3 MiB)을 확인한 뒤, 현재 언어에 맞는 `linkdisc_{kr,en,jp}.mp`를 `sceUtilitySavedata`로 쓴다.
-  * 상태 `3`(`0x0886DB58`): 여유 공간 `0x000E1000`(900 KiB)을 확인한 뒤, `linkdisc_game.mp`를 `sceUtilitySavedata`로 쓴다.
-* **원본(DMP2 아카이브 항목)과 크기**(`0x088BE3E8` / `BOOT.BIN` 문자열 확인됨):
+* **쓰는 시점**: DMP2로 되돌린 뒤가 아니라, **UMD 교체 전**(상태 `1`~`3`, 아직 DMP2 UMD가 꽂혀 있는 시점)에 DMP2 아카이브에서 메모리 스틱(`ULKS46116DATA0/SD2.BIN`, `ULKS46116DATA1/SD3.BIN`)으로 꺼내 둔다(**확인됨**).
+  * 상태 `1`(`0x0886D9F0`): `0x088BCE58` → `0x088BD074`(`sceUtilitySavedata mode 12`)로 `ULKS46116DATA0`과 `ULKS46116DATA1`의 기존 파일 존재 여부를 확인한다. 이미 있으면 상태 `2`~`3`을 건너뛰고 상태 `4`로 간다.
+  * 상태 `2`(`0x0886DA70`): `sceIoDevctl("ms0:", 0x02425818, ...)`로 여유 공간 `0x00300000`(3 MiB)을 확인한 뒤, 현재 언어에 맞는 `linkdisc_{kr,en,jp}.mp`를 `sceUtilitySavedata mode 13(MAKEDATASECURE)`로 `ULKS46116DATA0/SD2.BIN`에 쓴다.
+  * 상태 `3`(`0x0886DB58`): 여유 공간 `0x000E1000`(900 KiB)을 확인한 뒤, `linkdisc_game.mp`를 `sceUtilitySavedata mode 13(MAKEDATASECURE)`로 `ULKS46116DATA1/SD3.BIN`에 쓴다.
+* **원본(DMP2 아카이브 항목)과 크기**(`0x088BE3E8` / `BOOT.BIN` 문자열 및 실측 확인됨):
 
-  | DMP2 아카이브 경로 | 크기 (hex) | 크기 (bytes) | 용도 |
+  | DMP2 아카이브 경로 | 크기 (hex) | 크기 (bytes) | 실제 저장 슬롯·파일명 및 용도 |
   |---|---:|---:|---|
-  | `system/linkdisc_kr.mp` | `0x0022ABAD` | 2,272,173 | 한국어 UI/리소스 (상태 4에서 휘발성 메모리로 복사) |
-  | `system/linkdisc_en.mp` | `0x0023277A` | 2,303,866 | 영어 UI/리소스 |
-  | `system/linkdisc_jp.mp` | `0x00233B79` | 2,308,985 | 일본어 UI/리소스 |
-  | `system/linkdisc_game.mp` | `0x00076404` | 484,356 | 플레이 장면(`0x08853628`, `0x0885462C`, `0x0885479C`)이 `ms0:/PSP/SAVEDATA/ULKS46116DATA0/linkdisc_game.mp`로 직접 열람 |
+  | `system/linkdisc_kr.mp` | `0x0022ABAD` | 2,272,173 | `ULKS46116DATA0/SD2.BIN` — 한국어 UI/리소스 (`sceUtilitySavedata mode 15`로 읽어 상태 4에서 휘발성 메모리로 복사) |
+  | `system/linkdisc_en.mp` | `0x0023277A` | 2,303,866 | `ULKS46116DATA0/SD2.BIN` — 영어 UI/리소스 |
+  | `system/linkdisc_jp.mp` | `0x00233B79` | 2,308,985 | `ULKS46116DATA0/SD2.BIN` — 일본어 UI/리소스 |
+  | `system/linkdisc_game.mp` | `0x00076404` | 484,356 | `ULKS46116DATA1/SD3.BIN` — 링크 모드 플레이 진입 시 `sceUtilitySavedata mode 15(READDATASECURE)`로 읽음(`0x08853628`/`0x0885462C`/`0x0885479C`의 `0x08817808(..., 1, 2)` 경로; `sceIoOpen` 직접 호출 없음) |
 
 * **`sceUtilitySavedata` 확장 모드 호출 매핑**(`0x088BD074`~`0x088BD8CC` 확인됨, PSPSDK 모드 이름은 **추정**):
   * `0x088BD074`: `mode = 12` (PSPSDK `PSP_UTILITY_SAVEDATA_TYPE_FILES`, 파일 목록 조회)
@@ -167,16 +167,16 @@ stateDiagram-v2
 
 ## 6. `ms0:/PSP/SAVEDATA/...` 직접 접근과 `sceUtility` 세이브 경로(`--save-dir`)
 
-* **상태**: **확인됨**(`src/app/main.cpp` 코드 확인).
-* 현재 경로 불일치:
-  * `ms0:` VFS 마운트(`src/app/main.cpp` 644, 698행): `repsp::platform::GetUserDataDirectory("redmp2") / "ms0"`로 고정되어 `--save-dir`를 따르지 않는다.
-  * `sceUtility` `save_root`(`src/app/main.cpp` 841~843행): `--save-dir`가 있으면 그 경로, 없으면 `GetUserDataDirectory("redmp2") / "savedata"`를 사용한다.
-* **영향**:
-  * 링크 디스크 상태 `2`~`3`은 `sceUtilitySavedata`로 `<save_root>/ULKS46116DATA0/linkdisc_game.mp`를 생성한다.
-  * 플레이 장면(`0x08853628`, `0x0885462C`, `0x0885479C`)은 포맷 문자열 `"/PSP/SAVEDATA/%sDATA0/linkdisc_game.mp"`(`0x088CB3DA`)로 `IoFileMgrForUser`를 통해 `ms0:/PSP/SAVEDATA/ULKS46116DATA0/linkdisc_game.mp`를 직접 연다.
-  * 두 경로가 다르므로 현재 구조에서는 `linkdisc_game.mp`를 찾지 못한다.
-* **3단계 반영 방향**:
-  * `ms0:/PSP/SAVEDATA`와 `sceUtility` `save_root`가 항상 같은 디렉터리를 가리키도록 통합해야 한다(예: `ms0:` 루트 아래 `PSP/SAVEDATA`를 기본 `save_root`로 두고, `--save-dir` 지정 시 `ms0:/PSP/SAVEDATA` 마운트 또는 `ms0:` 경로가 그 위치를 가리키게 연결). 기존 `<user_data>/savedata`에 세이브가 있는 사용자를 위한 마이그레이션 절차는 3단계 설계에서 정한다.
+* **상태**: **확인됨**(`src/app/main.cpp` 코드 및 `REPSP_HLE_TRACE=1` 실측 확인).
+* 1단계 시점 경로 불일치:
+  * `ms0:` VFS 마운트(`src/app/main.cpp`): `<user_data>/ms0`로 고정되어 `--save-dir`를 따르지 않았다.
+  * `sceUtility` `save_root`: `--save-dir`가 있으면 그 경로, 없으면 `<user_data>/savedata`를 사용했다.
+* **실측 확인 결과 (`REPSP_HLE_TRACE=1`, 2026-11-24)**:
+  * 링크 모드 곡 플레이(`ScorePlayerThread` 진입 포함)와 DMP2 복귀 후 일반 모드(4B) 플레이 모두에서 `ms0:/PSP/SAVEDATA/ULKS46116DATA0/linkdisc_game.mp`에 대한 **`sceIoOpen`/`sceIoOpenAsync` 호출은 발생하지 않았다**. (`sceIoOpenAsync`는 모두 `disc0:/PSP_GAME/...`만 연다.)
+  * `0x08853628`/`0x0885462C`/`0x0885479C`가 포맷 문자열 `"/PSP/SAVEDATA/%sDATA0/linkdisc_game.mp"`(`0x088CB3C4`)로 `0x08817808(..., 1, 2)`를 부르는 경로는 `IoFileMgrForUser` 직접 열기가 아니라 내부적으로 **`sceUtilitySavedata`(`FILES(12)` → `GETSIZE(22)` → `READDATASECURE(15)`)로 `ULKS46116DATA1/SD3.BIN`(484,356 B)**을 읽는다.
+  * 따라서 1단계 정적 분석의 "플레이 장면이 `linkdisc_game.mp`를 `IoFileMgrForUser`로 직접 연다"는 추정은 실측으로 정정된다.
+* **3단계 반영 내용**:
+  * `sceIoDevctl("ms0:", 0x02425818)` 여유 공간 조회와 `sceUtility` 세이브가 동일한 메모리 스틱 루트를 가리키도록 `--save-dir`를 `ms0:` 루트(기본 `<user_data>/ms0`)로 통합하고 `sceUtility` `save_root`를 `<ms0>/PSP/SAVEDATA`로 통일했다(기존 `<user_data>/savedata`는 최초 실행 시 자동 이전).
 
 ---
 ---
@@ -199,7 +199,7 @@ Statements are marked **confirmed** (verified in generated code, binaries, or li
    * `sceUmdUser`: `sceUmdCheckMedium` (`0x46EBB729`, `0x088C0A08`), `sceUmdReplacePermit` (`0xCBE9F02A`, `0x088C0A40`), `sceUmdReplaceProhibit` (`0x87533940`, `0x088C0A28`).
 3. **The swapped DMP1 disc is read beyond `PARAM.SFO` — `all.mp` and `all2.mp` are mounted (confirmed)**: Contrary to the earlier *inferred* hypothesis in Design §2 ("only `PARAM.SFO` is read"), immediately after verifying `ULKS46050`, DMP2 calls `0x0886EB94` → `0x08815100` to open `all.mp` and `all2.mp` on the inserted DMP1 UMD. Both `all.mp` and `all2.mp` exist in `roms/ULKS46050/PSP_GAME/USRDIR/`.
 4. **DMP2 explicitly closes open archive handles before permitting UMD swap (confirmed)**: `0x0886EC38` (in `CLinkDiscScene::Init`) and `0x0886ECA8` (on returning to DMP2) close `all.mp` and `all2.mp` via `0x08815164` before the swap and reopen them afterward.
-5. **`ms0:/PSP/SAVEDATA` and `sceUtility` save root currently point to different directories (confirmed)**: In `src/app/main.cpp`, `ms0:` mounts `<user_data>/ms0` while `sceUtility` uses `--save-dir` (default `<user_data>/savedata`). Link Disc writes `ULKS46116DATA0/linkdisc_game.mp` via `sceUtilitySavedata` and later reads it directly via `ms0:/PSP/SAVEDATA/ULKS46116DATA0/linkdisc_game.mp`, so the two paths must be unified.
+5. **`ms0:/PSP/SAVEDATA` and `sceUtility` save root separation (confirmed; unified in Phase 3)**: Originally `src/app/main.cpp` mounted `ms0:` at `<user_data>/ms0` while `sceUtility` used `--save-dir` (default `<user_data>/savedata`). Live `REPSP_HLE_TRACE=1` verification confirmed that link data is read and written exclusively through `sceUtilitySavedata` as `ULKS46116DATA0/SD2.BIN` (2,272,173 B) and `ULKS46116DATA1/SD3.BIN` (484,356 B) rather than direct `sceIoOpen`, and unifying both under a single Memory Stick root (`--save-dir` → `<dir>/PSP/SAVEDATA`) keeps `sceIoDevctl("ms0:", 0x02425818)` and savedata aligned with PSP layout.
 
 ---
 
@@ -310,18 +310,18 @@ stateDiagram-v2
 
 * **Status**: Extraction timing, sizes, and archive sources **confirmed**; `SD.BIN` flags **unresolved** (to confirm after the swap model).
 
-* **When written**: Not after returning to DMP2, but **before the UMD swap** (states `1`–`3`, while DMP2 is still inserted) into `ULKS46116DATA0` via `sceUtilitySavedata` (**confirmed**).
-  * State `1` (`0x0886D9F0`): queries existing files via `0x088BD074` (`sceUtilitySavedata mode 12`). If present, skips directly to state `4`.
-  * State `2` (`0x0886DA70`): checks `0x00300000` (3 MiB) free on `ms0:` via `sceIoDevctl(0x02425818)` and writes the language-specific `linkdisc_{kr,en,jp}.mp`.
-  * State `3` (`0x0886DB58`): checks `0x000E1000` (900 KiB) free on `ms0:` and writes `linkdisc_game.mp`.
-* **Archive sources and sizes** (`0x088BE3E8` / `BOOT.BIN` strings, confirmed):
+* **When written**: Not after returning to DMP2, but **before the UMD swap** (states `1`–`3`, while DMP2 is still inserted) into `ULKS46116DATA0/SD2.BIN` and `ULKS46116DATA1/SD3.BIN` via `sceUtilitySavedata` (**confirmed**).
+  * State `1` (`0x0886D9F0`): queries existing files in `ULKS46116DATA0` and `ULKS46116DATA1` via `0x088BD074` (`sceUtilitySavedata mode 12`). If present, skips directly to state `4`.
+  * State `2` (`0x0886DA70`): checks `0x00300000` (3 MiB) free on `ms0:` via `sceIoDevctl(0x02425818)` and writes the language-specific `linkdisc_{kr,en,jp}.mp` to `ULKS46116DATA0/SD2.BIN` via `MAKEDATASECURE(13)`.
+  * State `3` (`0x0886DB58`): checks `0x000E1000` (900 KiB) free on `ms0:` and writes `linkdisc_game.mp` to `ULKS46116DATA1/SD3.BIN` via `MAKEDATASECURE(13)`.
+* **Archive sources and sizes** (`0x088BE3E8` / `BOOT.BIN` strings and live run, confirmed):
 
-  | DMP2 Archive Entry | Size (hex) | Size (bytes) | Role |
+  | DMP2 Archive Entry | Size (hex) | Size (bytes) | Savedata Slot/File & Role |
   |---|---:|---:|---|
-  | `system/linkdisc_kr.mp` | `0x0022ABAD` | 2,272,173 | Korean UI/resources (copied to volatile memory in state 4) |
-  | `system/linkdisc_en.mp` | `0x0023277A` | 2,303,866 | English UI/resources |
-  | `system/linkdisc_jp.mp` | `0x00233B79` | 2,308,985 | Japanese UI/resources |
-  | `system/linkdisc_game.mp` | `0x00076404` | 484,356 | Opened directly by play scene (`0x08853628`, `0x0885462C`, `0x0885479C`) at `ms0:/PSP/SAVEDATA/ULKS46116DATA0/linkdisc_game.mp` |
+  | `system/linkdisc_kr.mp` | `0x0022ABAD` | 2,272,173 | `ULKS46116DATA0/SD2.BIN` — Korean UI/resources (read via `mode 15`, copied to volatile memory in state 4) |
+  | `system/linkdisc_en.mp` | `0x0023277A` | 2,303,866 | `ULKS46116DATA0/SD2.BIN` — English UI/resources |
+  | `system/linkdisc_jp.mp` | `0x00233B79` | 2,308,985 | `ULKS46116DATA0/SD2.BIN` — Japanese UI/resources |
+  | `system/linkdisc_game.mp` | `0x00076404` | 484,356 | `ULKS46116DATA1/SD3.BIN` — read via `sceUtilitySavedata mode 15 (READDATASECURE)` on Link Disc play entry (`0x08853628`/`0x0885462C`/`0x0885479C` → `0x08817808(..., 1, 2)`; no direct `sceIoOpen`) |
 
 * **`sceUtilitySavedata` extended modes used** (`0x088BD074`–`0x088BD8CC` confirmed; PSPSDK enum names **inferred**):
   * `0x088BD074`: `mode = 12` (`PSP_UTILITY_SAVEDATA_TYPE_FILES`)
@@ -350,13 +350,13 @@ stateDiagram-v2
 
 ## 6. Direct `ms0:/PSP/SAVEDATA/...` Access vs. `sceUtility` Save Root (`--save-dir`)
 
-* **Status**: **Confirmed** (from `src/app/main.cpp`).
-* Current mismatch:
-  * `ms0:` VFS mount (`src/app/main.cpp` lines 644, 698): fixed to `repsp::platform::GetUserDataDirectory("redmp2") / "ms0"`, ignoring `--save-dir`.
-  * `sceUtility` `save_root` (`src/app/main.cpp` lines 841–843): uses `--save-dir` if given, else `GetUserDataDirectory("redmp2") / "savedata"`.
-* **Impact**:
-  * States `2`–`3` write `<save_root>/ULKS46116DATA0/linkdisc_game.mp` through `sceUtilitySavedata`.
-  * The play scene (`0x08853628`, `0x0885462C`, `0x0885479C`) opens `ms0:/PSP/SAVEDATA/ULKS46116DATA0/linkdisc_game.mp` directly via `IoFileMgrForUser` (format string `"/PSP/SAVEDATA/%sDATA0/linkdisc_game.mp"` at `0x088CB3DA`).
-  * Because the two directories differ, direct reads cannot find `linkdisc_game.mp` today.
-* **Direction for Phase 3**:
-  * Unify `ms0:/PSP/SAVEDATA` and `sceUtility` `save_root` to the same directory (and cover `--save-dir` plus migration of any existing `<user_data>/savedata` saves in the Phase 3 design).
+* **Status**: **Confirmed** (from `src/app/main.cpp` and live `REPSP_HLE_TRACE=1` measurement).
+* Phase 1 mismatch:
+  * `ms0:` VFS mount was fixed to `<user_data>/ms0`, ignoring `--save-dir`.
+  * `sceUtility` `save_root` used `--save-dir` (or `<user_data>/savedata`).
+* **Live trace result (`REPSP_HLE_TRACE=1`, 2026-11-24)**:
+  * Neither Link Disc song play (including `ScorePlayerThread` entry) nor normal DMP2 4B play after returning to DMP2 calls `sceIoOpen`/`sceIoOpenAsync` on `ms0:/PSP/SAVEDATA/ULKS46116DATA0/linkdisc_game.mp` (all `sceIoOpenAsync` calls open `disc0:/PSP_GAME/...`).
+  * The `0x08853628`/`0x0885462C`/`0x0885479C` path that formats `"/PSP/SAVEDATA/%sDATA0/linkdisc_game.mp"` (`0x088CB3C4`) and calls `0x08817808(..., 1, 2)` actually reads **`ULKS46116DATA1/SD3.BIN` (484,356 B) through `sceUtilitySavedata` (`FILES(12)` → `GETSIZE(22)` → `READDATASECURE(15)`)**, not via `IoFileMgrForUser`.
+  * This corrects the Phase 1 static inference that the play scene directly opened `linkdisc_game.mp` via `IoFileMgrForUser`.
+* **Phase 3 resolution**:
+  * `--save-dir` was unified as the `ms0:` root (default `<user_data>/ms0`) with `sceUtility` `save_root` at `<ms0>/PSP/SAVEDATA` (and automatic one-time migration from `<user_data>/savedata`), keeping `sceIoDevctl("ms0:", 0x02425818)` and savedata aligned on one Memory Stick root.
