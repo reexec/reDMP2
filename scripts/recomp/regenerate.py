@@ -7,6 +7,7 @@ import struct
 import sys
 from pathlib import Path
 
+from disc_resolver import DiscResolutionError, resolve_main_disc
 from lifter import run_allegrexrecomp
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -102,7 +103,15 @@ def main():
     if not prefix:
         prefix = "dmp2"
 
-    game_dir = Path(args.game_dir).resolve()
+    try:
+        game_dir, extra_discs = resolve_main_disc(Path(args.game_dir))
+    except DiscResolutionError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    for extra_id, extra_path in extra_discs:
+        print(f"Link disc candidate: {extra_id} ({extra_path})")
+
     try:
         input_path, desc = select_lift_input(game_dir)
     except FileNotFoundError as e:
