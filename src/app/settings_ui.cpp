@@ -1,6 +1,7 @@
 #include "settings_ui.h"
 
 #include "repsp/hle/atrac.h"
+#include "repsp/hle/umd.h"
 #include "repsp/platform/overlay.h"
 #include "repsp/platform/post_shader.h"
 
@@ -143,8 +144,17 @@ uint64_t EffectiveGpuBytes(const repsp::gpu::GpuMemoryInfo& gpu)
 
 } // namespace
 
-SettingsUi::SettingsUi(BuildInfo build, Settings settings, SettingsFile* file, app::Autoplay* autoplay)
-    : build_(std::move(build)), settings_(settings), file_(file), autoplay_(autoplay)
+SettingsUi::SettingsUi(BuildInfo build,
+                       Settings settings,
+                       SettingsFile* file,
+                       app::Autoplay* autoplay,
+                       LinkDiscConfig link_discs)
+    : build_(std::move(build)),
+      settings_(settings),
+      file_(file),
+      autoplay_(autoplay),
+      link_discs_(std::move(link_discs)),
+      active_disc_id_(link_discs_.main_disc_id)
 {
 }
 
@@ -359,6 +369,89 @@ void SettingsUi::DrawInfoTab()
                     FormatMib(gpu_memory_.hle_targets_bytes) + ")");
         }
         ImGui::EndTable();
+    }
+
+    DrawLinkDiscSection();
+}
+
+void SettingsUi::DrawLinkDiscSection()
+{
+    ImGui::SeparatorText("Link disc");
+
+    const uint32_t drive_stat = repsp::hle::umd::GetDriveStat();
+    const bool permitted = repsp::hle::umd::IsReplacePermitted();
+    const char* drive_text = "Ready";
+    if ((drive_stat & repsp::hle::umd::kUmdNotPresent) != 0)
+    {
+        drive_text = "Ejected";
+    }
+    else if ((drive_stat & repsp::hle::umd::kUmdReady) == 0)
+    {
+        drive_text = "Changing...";
+    }
+
+    if (BeginInfoTable("link_disc_info"))
+    {
+        Row("Drive", drive_text);
+        Row("Inserted", active_disc_id_.empty() ? "-" : active_disc_id_);
+        ImGui::EndTable();
+    }
+
+    if (link_discs_.candidates.empty())
+    {
+        ImGui::TextDisabled("No link discs found in roms/.");
+        return;
+    }
+
+    if (!permitted)
+    {
+        ImGui::TextDisabled("Disc replacement is not permitted by the game right now.");
+    }
+
+    auto perform_swap = [this](const std::filesystem::path& path, const std::string& disc_id)
+    {
+        const auto eject_res = repsp::hle::umd::EjectDisc();
+        if (!eject_res.ok)
+        {
+            link_status_ = eject_res.reason;
+            return;
+        }
+        const auto insert_res = repsp::hle::umd::InsertDisc(path);
+        if (!insert_res.ok)
+        {
+            link_status_ = insert_res.reason;
+            return;
+        }
+        active_disc_id_ = disc_id;
+        link_status_ = "Inserted " + disc_id + ".";
+    };
+
+    ImGui::BeginDisabled(!permitted);
+    for (size_t i = 0; i < link_discs_.candidates.size(); ++i)
+    {
+        const auto& cand = link_discs_.candidates[i];
+        ImGui::PushID(static_cast<int>(i));
+        std::string label = cand.title.empty() ? cand.disc_id : (cand.title + " (" + cand.disc_id + ")");
+        if (ImGui::Button("Insert"))
+        {
+            perform_swap(cand.path, cand.disc_id);
+        }
+        ImGui::SameLine();
+        ImGui::TextUnformatted(label.c_str());
+        ImGui::PopID();
+    }
+    if (!link_discs_.main_path.empty())
+    {
+        if (ImGui::Button("Reinsert DMP2"))
+        {
+            perform_swap(link_discs_.main_path, link_discs_.main_disc_id);
+        }
+    }
+    ImGui::EndDisabled();
+
+    if (!link_status_.empty())
+    {
+        ImGui::TextDisabled("%s", link_status_.c_str());
     }
 }
 

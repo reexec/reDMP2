@@ -41,6 +41,7 @@
 #include <repsp/hle/kernel.h>
 #include <repsp/hle/mpeg.h>
 #include <repsp/hle/sascore.h>
+#include <repsp/hle/umd.h>
 #include <repsp/hle/utility.h>
 #include <repsp/platform/crash_handler.h>
 #include <repsp/platform/display.h>
@@ -92,7 +93,8 @@ void PrintUsage(const char* prog)
               << "  --max-vblanks <n>      Stop execution after <n> VBlanks (0 = unlimited)\n"
               << "  --input-script <path>  Deterministic controller script (<vblank> <button names>)\n"
               << "  --autoplay             Enable input-stage autoplay for this run (not saved)\n"
-              << "  --save-dir <path>      Directory for sceUtility savedata slots (default: user data/savedata)\n"
+              << "  --save-dir <path>      Memory Stick root (ms0:); saves go under <path>/PSP/SAVEDATA (default: user data/ms0)\n"
+              << "  --insert-disc <v>:<id> Swap UMD at vblank <v> to disc ID or 'main' (repeatable)\n"
               << "  --dialog-answer <ans>  Auto answer for Yes/No utility dialogs: yes or no (default: yes)\n"
               << "  --codec-plugin <path>  Path to optional codec plugin shared library\n"
               << "  --no-codec-plugin      Disable optional codec plugin (use silent/blank)\n"
@@ -581,6 +583,90 @@ bool TriggerDebugCrash(const std::string& kind, repsp::runtime::Scheduler& sched
     return false;
 }
 
+struct ScheduledDiscSwap
+{
+    uint32_t vblank = 0;
+    std::string target;
+    bool fired = false;
+};
+
+std::string NormalizeDiscIdKey(const std::string& id)
+{
+    std::string out;
+    out.reserve(id.size());
+    for (unsigned char ch : id)
+    {
+        if (ch == '-' || ch == '_' || ch == ' ')
+        {
+            continue;
+        }
+        out.push_back(static_cast<char>(std::toupper(ch)));
+    }
+    return out;
+}
+
+void MigrateLegacySavedataIfNeeded(const std::filesystem::path& old_savedata_dir,
+                                   const std::filesystem::path& new_savedata_dir)
+{
+    std::error_code ec;
+    if (!std::filesystem::exists(old_savedata_dir, ec) ||
+        !std::filesystem::is_directory(old_savedata_dir, ec))
+    {
+        return;
+    }
+
+    auto has_any_entry = [](const std::filesystem::path& dir) -> bool {
+        std::error_code it_ec;
+        if (!std::filesystem::exists(dir, it_ec) || !std::filesystem::is_directory(dir, it_ec))
+        {
+            return false;
+        }
+        auto it = std::filesystem::directory_iterator(dir, it_ec);
+        return !it_ec && it != std::filesystem::directory_iterator{};
+    };
+
+    if (!has_any_entry(old_savedata_dir) || has_any_entry(new_savedata_dir))
+    {
+        return;
+    }
+
+    std::filesystem::create_directories(new_savedata_dir, ec);
+    if (ec)
+    {
+        return;
+    }
+
+    size_t moved = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(old_savedata_dir, ec))
+    {
+        if (ec)
+        {
+            break;
+        }
+        const std::filesystem::path dst = new_savedata_dir / entry.path().filename();
+        std::error_code move_ec;
+        std::filesystem::rename(entry.path(), dst, move_ec);
+        if (move_ec)
+        {
+            move_ec.clear();
+            std::filesystem::copy(entry.path(), dst, std::filesystem::copy_options::recursive, move_ec);
+            if (!move_ec)
+            {
+                std::filesystem::remove_all(entry.path(), move_ec);
+            }
+        }
+        if (!move_ec)
+        {
+            ++moved;
+        }
+    }
+    if (moved > 0)
+    {
+        std::cout << "[redmp2] Migrated " << moved << " savedata slot(s) from "
+                  << old_savedata_dir.string() << " to " << new_savedata_dir.string() << "\n";
+    }
+}
+
 int RunBoot(const std::filesystem::path& game_dir,
             const redmp2::IdentifyResult& idResult,
             uint32_t base,
@@ -599,7 +685,8 @@ int RunBoot(const std::filesystem::path& game_dir,
             const std::string& debug_crash_kind,
             bool scale_explicit,
             const std::string* post_shader_cli,
-            bool autoplay_cli)
+            bool autoplay_cli,
+            const std::vector<ScheduledDiscSwap>& scheduled_swaps)
 {
     std::vector<InputScriptEntry> input_script;
     if (!input_script_path.empty())
@@ -641,9 +728,15 @@ int RunBoot(const std::filesystem::path& game_dir,
         return 1;
     }
 
-    std::filesystem::path ms0_dir = repsp::platform::GetUserDataDirectory("redmp2") / "ms0";
+    const std::filesystem::path user_data_dir = repsp::platform::GetUserDataDirectory("redmp2");
+    std::filesystem::path ms0_dir = save_dir.empty() ? (user_data_dir / "ms0") : save_dir;
+    std::filesystem::path savedata_dir = ms0_dir / "PSP" / "SAVEDATA";
+    if (save_dir.empty())
+    {
+        MigrateLegacySavedataIfNeeded(user_data_dir / "savedata", savedata_dir);
+    }
     std::error_code ec;
-    std::filesystem::create_directories(ms0_dir, ec);
+    std::filesystem::create_directories(savedata_dir, ec);
 
     redmp2::SettingsFile settings_file;
     const redmp2::Settings settings = settings_file.Load();
@@ -753,7 +846,21 @@ int RunBoot(const std::filesystem::path& game_dir,
         build_info.commit = REDMP2_GIT_COMMIT;
         build_info.game_id = idResult.disc_id;
         build_info.game_title = idResult.title;
-        settings_ui = std::make_unique<redmp2::SettingsUi>(std::move(build_info), settings, &settings_file, &autoplay);
+
+        redmp2::LinkDiscConfig link_cfg;
+        link_cfg.main_disc_id = idResult.disc_id;
+        link_cfg.main_title = idResult.title;
+        link_cfg.main_path = game_dir;
+        for (const auto& extra : idResult.extra_discs)
+        {
+            std::error_code usr_ec;
+            if (std::filesystem::is_directory(extra.path / "PSP_GAME" / "USRDIR", usr_ec) && !usr_ec)
+            {
+                link_cfg.candidates.push_back(redmp2::LinkDiscOption{extra.disc_id, extra.title, extra.path});
+            }
+        }
+        settings_ui = std::make_unique<redmp2::SettingsUi>(
+            std::move(build_info), settings, &settings_file, &autoplay, std::move(link_cfg));
         repsp::platform::SetOverlayBuilder([&settings_ui]()
         {
             if (settings_ui)
@@ -838,9 +945,7 @@ int RunBoot(const std::filesystem::path& game_dir,
     }
 
     repsp::hle::utility::Config utility_cfg;
-    utility_cfg.save_root = save_dir.empty()
-                                ? (repsp::platform::GetUserDataDirectory("redmp2") / "savedata")
-                                : save_dir;
+    utility_cfg.save_root = savedata_dir;
     repsp::hle::utility::Register(utility_cfg);
     repsp::hle::utility::SetDialogPolicy(
         [yes_no_answer](repsp::hle::utility::DialogKind,
@@ -1041,6 +1146,74 @@ int RunBoot(const std::filesystem::path& game_dir,
             });
     }
 
+    std::vector<ScheduledDiscSwap> swaps = scheduled_swaps;
+    uint32_t disc_swap_sub_id = 0;
+    if (!swaps.empty())
+    {
+        std::vector<redmp2::ExtraDisc> valid_link_discs;
+        for (const auto& extra : idResult.extra_discs)
+        {
+            std::error_code usr_ec;
+            if (std::filesystem::is_directory(extra.path / "PSP_GAME" / "USRDIR", usr_ec) && !usr_ec)
+            {
+                valid_link_discs.push_back(extra);
+            }
+        }
+        disc_swap_sub_id = repsp::runtime::GetVblankClock().Subscribe(
+            [&swaps, game_dir, valid_link_discs](uint32_t vcount)
+            {
+                for (auto& swap : swaps)
+                {
+                    if (swap.fired || vcount < swap.vblank)
+                    {
+                        continue;
+                    }
+                    swap.fired = true;
+                    std::filesystem::path target_path;
+                    const std::string key = NormalizeDiscIdKey(swap.target);
+                    if (key == "MAIN")
+                    {
+                        target_path = game_dir;
+                    }
+                    else
+                    {
+                        for (const auto& cand : valid_link_discs)
+                        {
+                            if (NormalizeDiscIdKey(cand.disc_id) == key)
+                            {
+                                target_path = cand.path;
+                                break;
+                            }
+                        }
+                    }
+                    if (target_path.empty())
+                    {
+                        std::cerr << "[link-disc] vblank " << vcount
+                                  << ": unknown disc target '" << swap.target << "'\n";
+                        continue;
+                    }
+                    const auto eject_res = repsp::hle::umd::EjectDisc();
+                    if (!eject_res.ok)
+                    {
+                        std::cout << "[link-disc] vblank " << vcount << ": EjectDisc refused ("
+                                  << eject_res.reason << ")\n";
+                        continue;
+                    }
+                    const auto insert_res = repsp::hle::umd::InsertDisc(target_path);
+                    if (!insert_res.ok)
+                    {
+                        std::cout << "[link-disc] vblank " << vcount << ": InsertDisc('"
+                                  << swap.target << "') failed (" << insert_res.reason << ")\n";
+                    }
+                    else
+                    {
+                        std::cout << "[link-disc] vblank " << vcount << ": inserted '"
+                                  << swap.target << "' (" << target_path.string() << ")\n";
+                    }
+                }
+            });
+    }
+
     repsp::runtime::GetNidRegistry().SetStopOnUnimplemented(true);
 
     if (!debug_crash_kind.empty())
@@ -1069,6 +1242,10 @@ int RunBoot(const std::filesystem::path& game_dir,
     if (mem_dump_sub_id != 0)
     {
         repsp::runtime::GetVblankClock().Unsubscribe(mem_dump_sub_id);
+    }
+    if (disc_swap_sub_id != 0)
+    {
+        repsp::runtime::GetVblankClock().Unsubscribe(disc_swap_sub_id);
     }
     if (vblank_limit_sub_id != 0)
     {
@@ -1277,6 +1454,9 @@ int main(int argc, char* argv[])
     bool autoplay_cli = false;
     uint32_t max_vblanks = 0;
     uint32_t audio_latency_ms = 20;
+#if REDMP2_HAVE_RECOMP
+    std::vector<ScheduledDiscSwap> scheduled_swaps;
+#endif
 
     for (int i = 2; i < argc; ++i)
     {
@@ -1435,6 +1615,37 @@ int main(int argc, char* argv[])
         {
             autoplay_cli = true;
         }
+        else if (opt == "--insert-disc")
+        {
+            if (i + 1 >= argc)
+            {
+                std::cerr << "Error: --insert-disc requires <vblank>:<disc_id|main>.\n";
+                return 1;
+            }
+            const std::string spec = argv[++i];
+            const size_t colon = spec.find(':');
+            if (colon == std::string::npos || colon == 0 || colon + 1 >= spec.size())
+            {
+                std::cerr << "Error: Invalid --insert-disc value: " << spec
+                          << " (expected <vblank>:<disc_id|main>)\n";
+                return 1;
+            }
+            const std::string vb_str = spec.substr(0, colon);
+            const std::string target = spec.substr(colon + 1);
+            char* end_ptr = nullptr;
+            unsigned long parsed = std::strtoul(vb_str.c_str(), &end_ptr, 10);
+            if (vb_str[0] == '-' || end_ptr == nullptr || *end_ptr != '\0')
+            {
+                std::cerr << "Error: Invalid --insert-disc vblank: " << vb_str << "\n";
+                return 1;
+            }
+#if REDMP2_HAVE_RECOMP
+            scheduled_swaps.push_back(ScheduledDiscSwap{static_cast<uint32_t>(parsed), target, false});
+#else
+            (void)parsed;
+            (void)target;
+#endif
+        }
         else if (opt == "--max-vblanks")
         {
             if (i + 1 >= argc)
@@ -1528,7 +1739,7 @@ int main(int argc, char* argv[])
                                      : repsp::hle::utility::DialogAnswer::kNo,
                    codec_plugin_path, no_codec_plugin, audio_latency_ms,
                    crash_dir, no_input_record, debug_crash_kind, scale_explicit,
-                   has_post_shader_cli ? &post_shader_cli : nullptr, autoplay_cli);
+                   has_post_shader_cli ? &post_shader_cli : nullptr, autoplay_cli, scheduled_swaps);
 #else
     (void)scale_explicit;
     (void)post_shader_cli;

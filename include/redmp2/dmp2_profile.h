@@ -41,6 +41,7 @@ struct ExtraDisc
 {
     std::string disc_id;
     std::filesystem::path path;
+    std::string title;
 };
 
 struct IdentifyResult

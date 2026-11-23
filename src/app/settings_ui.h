@@ -9,10 +9,27 @@
 #include <chrono>
 #include <cstdint>
 #include <deque>
+#include <filesystem>
 #include <string>
+#include <vector>
 
 namespace redmp2
 {
+
+struct LinkDiscOption
+{
+    std::string disc_id;
+    std::string title;
+    std::filesystem::path path;
+};
+
+struct LinkDiscConfig
+{
+    std::string main_disc_id;
+    std::string main_title;
+    std::filesystem::path main_path;
+    std::vector<LinkDiscOption> candidates;
+};
 
 struct BuildInfo
 {
@@ -27,7 +44,11 @@ struct BuildInfo
 class SettingsUi
 {
 public:
-    SettingsUi(BuildInfo build, Settings settings, SettingsFile* file, app::Autoplay* autoplay = nullptr);
+    SettingsUi(BuildInfo build,
+               Settings settings,
+               SettingsFile* file,
+               app::Autoplay* autoplay = nullptr,
+               LinkDiscConfig link_discs = {});
 
     // Overlay builder callback: runs on every present pass on the UI thread.
     void Build();
@@ -54,6 +75,7 @@ private:
     void DrawMenu();
     void DrawTab(void (SettingsUi::*draw)());
     void DrawInfoTab();
+    void DrawLinkDiscSection();
     void DrawGraphicsTab();
     void DrawPostShaderSection(float combo_width);
     void DrawAudioTab();
@@ -65,6 +87,9 @@ private:
     Settings settings_;
     SettingsFile* file_ = nullptr;
     app::Autoplay* autoplay_ = nullptr;
+    LinkDiscConfig link_discs_;
+    std::string active_disc_id_;
+    std::string link_status_;
     bool observed_ = false;
     Tracked<int> render_scale_;
     Tracked<bool> fullscreen_;
