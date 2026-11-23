@@ -4,49 +4,32 @@
 import argparse
 import hashlib
 import json
-import struct
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-VARIANTS_JSON = REPO_ROOT / "src" / "game" / "dmp2" / "recomp" / "variants.json"
+from disc_resolver import DEFAULT_VARIANTS_JSON, DiscResolutionError, parse_sfo, resolve_main_disc
 
-def parse_sfo(data: bytes) -> dict[str, str | int]:
-    if len(data) < 20 or data[:4] != b"\x00PSF":
-        raise ValueError("Invalid SFO magic")
+VARIANTS_JSON = DEFAULT_VARIANTS_JSON
 
-    _, _, key_offset, data_offset, num_entries = struct.unpack_from("<4sIIII", data, 0)
-    entries = {}
-
-    entry_struct = struct.Struct("<HHIII")
-    for i in range(num_entries):
-        k_off, fmt, d_len, _, d_off = entry_struct.unpack_from(data, 20 + i * entry_struct.size)
-        # Read null-terminated key from key table
-        k_start = key_offset + k_off
-        k_end = data.find(b"\x00", k_start)
-        key = data[k_start:k_end].decode("utf-8", errors="replace")
-
-        # Read value based on format
-        v_start = data_offset + d_off
-        if fmt == 0x0204:  # UTF-8 string
-            val_bytes = data[v_start:v_start + d_len].rstrip(b"\x00")
-            entries[key] = val_bytes.decode("utf-8", errors="replace")
-        elif fmt == 0x0404:  # 32-bit uint
-            entries[key] = struct.unpack_from("<I", data, v_start)[0]
-        else:
-            entries[key] = data[v_start:v_start + d_len]
-
-    return entries
 
 def main():
     parser = argparse.ArgumentParser(description="Register disc dump into variants.json")
-    parser.add_argument("game_dir", nargs="?", default="roms", help="Path to extracted game directory (default: roms)")
+    parser.add_argument(
+        "game_dir",
+        nargs="?",
+        default="roms",
+        help="Path to disc folder or disc collection folder (default: roms)",
+    )
     args = parser.parse_args()
 
-    game_dir = Path(args.game_dir).resolve()
-    if not game_dir.is_dir():
-        print(f"Error: Directory not found: {game_dir}", file=sys.stderr)
+    try:
+        game_dir, extra_discs = resolve_main_disc(Path(args.game_dir), VARIANTS_JSON)
+    except DiscResolutionError as e:
+        print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
+
+    for extra_id, extra_path in extra_discs:
+        print(f"Link disc candidate: {extra_id} ({extra_path})")
 
     sfo_path = game_dir / "PSP_GAME" / "PARAM.SFO"
     if not sfo_path.is_file():

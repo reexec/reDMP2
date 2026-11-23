@@ -320,23 +320,43 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/game/dmp2/recomp/variants.json")
         set(REDMP2_HAS_REGISTERED_VARIANT TRUE)
     endif()
 endif()
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/PSP_GAME/PARAM.SFO" AND REDMP2_HAS_REGISTERED_VARIANT)
+
+# Resolve main disc directory under roms/ using the shared disc resolver
+# (supports both roms/<DISC_ID>/PSP_GAME and legacy roms/PSP_GAME).
+set(REDMP2_ROMS_DISC_DIR "")
+if(IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/roms" AND REDMP2_HAS_REGISTERED_VARIANT)
+    execute_process(
+        COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/scripts/recomp/disc_resolver.py"
+                --quiet
+                --variants "${CMAKE_CURRENT_SOURCE_DIR}/src/game/dmp2/recomp/variants.json"
+                "${CMAKE_CURRENT_SOURCE_DIR}/roms"
+        RESULT_VARIABLE _roms_resolve_res
+        OUTPUT_VARIABLE _roms_resolve_out
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(_roms_resolve_res EQUAL 0 AND IS_DIRECTORY "${_roms_resolve_out}")
+        set(REDMP2_ROMS_DISC_DIR "${_roms_resolve_out}")
+    endif()
+endif()
+
+if(REDMP2_ROMS_DISC_DIR AND EXISTS "${REDMP2_ROMS_DISC_DIR}/PSP_GAME/PARAM.SFO" AND REDMP2_HAS_REGISTERED_VARIANT)
     add_test(NAME app_smoke_registered_roms COMMAND $<TARGET_FILE:redmp2> "${CMAKE_CURRENT_SOURCE_DIR}/roms" --variants "${CMAKE_CURRENT_SOURCE_DIR}/src/game/dmp2/recomp/variants.json" --headless --save-dir "${CMAKE_CURRENT_BINARY_DIR}/test_savedata_smoke" --max-vblanks 10)
 endif()
 
 # Relocation cross-check (runs only when roms exist and BOOT.BIN is a relocatable PRX, e_type 0xFFA0)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/PSP_GAME/SYSDIR/BOOT.BIN")
-    file(READ "${CMAKE_CURRENT_SOURCE_DIR}/roms/PSP_GAME/SYSDIR/BOOT.BIN" REDMP2_BOOT_ELF_TYPE OFFSET 16 LIMIT 2 HEX)
+if(REDMP2_ROMS_DISC_DIR AND EXISTS "${REDMP2_ROMS_DISC_DIR}/PSP_GAME/SYSDIR/BOOT.BIN")
+    file(READ "${REDMP2_ROMS_DISC_DIR}/PSP_GAME/SYSDIR/BOOT.BIN" REDMP2_BOOT_ELF_TYPE OFFSET 16 LIMIT 2 HEX)
     if(REDMP2_BOOT_ELF_TYPE STREQUAL "a0ff")
         add_test(NAME reloc_check_relocate
             COMMAND $<TARGET_FILE:allegrexrecomp> relocate
-                    "${CMAKE_CURRENT_SOURCE_DIR}/roms/PSP_GAME/SYSDIR/BOOT.BIN"
+                    "${REDMP2_ROMS_DISC_DIR}/PSP_GAME/SYSDIR/BOOT.BIN"
                     "${REDMP2_LIFT_BASE}"
                     "${CMAKE_CURRENT_BINARY_DIR}/boot_reloc_allegrex.bin"
         )
         add_test(NAME reloc_check
             COMMAND $<TARGET_FILE:reloc_check>
-                    "${CMAKE_CURRENT_SOURCE_DIR}/roms/PSP_GAME/SYSDIR/BOOT.BIN"
+                    "${REDMP2_ROMS_DISC_DIR}/PSP_GAME/SYSDIR/BOOT.BIN"
                     "${CMAKE_CURRENT_BINARY_DIR}/boot_reloc_allegrex.bin"
                     "${REDMP2_LIFT_BASE}"
         )
@@ -347,14 +367,14 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/PSP_GAME/SYSDIR/BOOT.BIN")
             COMMAND "${Python3_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/scripts/check_lift_invariance.py"
                     --allegrexrecomp $<TARGET_FILE:allegrexrecomp>
-                    --binary "${CMAKE_CURRENT_SOURCE_DIR}/roms/PSP_GAME/SYSDIR/BOOT.BIN"
+                    --binary "${REDMP2_ROMS_DISC_DIR}/PSP_GAME/SYSDIR/BOOT.BIN"
                     --base "${REDMP2_LIFT_BASE}"
         )
     endif()
 endif()
 
 # Recompiled guest entry check (runs only when roms exist and recomp is built)
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/roms/PSP_GAME/SYSDIR/BOOT.BIN" AND REDMP2_HAVE_RECOMP AND REDMP2_HAS_REGISTERED_VARIANT)
+if(REDMP2_ROMS_DISC_DIR AND EXISTS "${REDMP2_ROMS_DISC_DIR}/PSP_GAME/SYSDIR/BOOT.BIN" AND REDMP2_HAVE_RECOMP AND REDMP2_HAS_REGISTERED_VARIANT)
     add_test(NAME app_lift_check
         COMMAND $<TARGET_FILE:redmp2>
                 "${CMAKE_CURRENT_SOURCE_DIR}/roms"

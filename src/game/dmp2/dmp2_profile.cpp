@@ -3,6 +3,7 @@
 #include <repsp/module/param_sfo.h>
 #include <repsp/runtime/sha1.h>
 
+#include <algorithm>
 #include <cctype>
 #include <fstream>
 #include <iomanip>
@@ -80,6 +81,129 @@ void SkipWhitespace(const std::string& input, size_t& pos)
     {
         ++pos;
     }
+}
+
+std::string NormalizeDiscId(const std::string& disc_id)
+{
+    // Disc ID in PARAM.SFO may omit hyphen (e.g. ULKS46116 vs ULKS-46116).
+    std::string norm;
+    norm.reserve(disc_id.size());
+    for (char c : disc_id)
+    {
+        if (c != '-')
+        {
+            norm.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
+        }
+    }
+    return norm;
+}
+
+bool HasVariantWithDiscId(const std::vector<Variant>& variants, const std::string& disc_id)
+{
+    const std::string norm = NormalizeDiscId(disc_id);
+    if (norm.empty())
+    {
+        return false;
+    }
+    for (const auto& v : variants)
+    {
+        if (NormalizeDiscId(v.disc_id) == norm)
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+IdentifyResult IdentifySingleDiscDirectory(const std::filesystem::path& disc_dir,
+                                           const std::vector<Variant>& variants)
+{
+    IdentifyResult res;
+    res.resolved_dir = disc_dir;
+
+    std::error_code ec;
+    std::filesystem::path sfo_path = disc_dir / "PSP_GAME" / "PARAM.SFO";
+    if (!std::filesystem::exists(sfo_path, ec))
+    {
+        res.status = IdentifyStatus::MissingParamSfo;
+        res.message = "PARAM.SFO not found at: " + sfo_path.string();
+        return res;
+    }
+
+    std::ifstream sfo_file(sfo_path, std::ios::binary);
+    if (!sfo_file.is_open())
+    {
+        res.status = IdentifyStatus::InvalidParamSfo;
+        res.message = "Failed to open PARAM.SFO at: " + sfo_path.string();
+        return res;
+    }
+    std::vector<uint8_t> sfo_bytes((std::istreambuf_iterator<char>(sfo_file)),
+                                   std::istreambuf_iterator<char>());
+    auto sfo_opt = repsp::module::ParamSfo::Parse(sfo_bytes.data(), sfo_bytes.size());
+    if (!sfo_opt.has_value())
+    {
+        res.status = IdentifyStatus::InvalidParamSfo;
+        res.message = "Failed to parse PARAM.SFO (invalid SFO format)";
+        return res;
+    }
+
+    res.disc_id = sfo_opt->GetString("DISC_ID").value_or("");
+    res.disc_version = sfo_opt->GetString("DISC_VERSION").value_or("");
+    res.title = sfo_opt->GetString("TITLE").value_or("");
+
+    // Identify executable candidate: prefer BOOT.BIN, fallback to EBOOT.BIN
+    std::filesystem::path boot_bin = disc_dir / "PSP_GAME" / "SYSDIR" / "BOOT.BIN";
+    std::filesystem::path eboot_bin = disc_dir / "PSP_GAME" / "SYSDIR" / "EBOOT.BIN";
+    std::filesystem::path chosen_exe;
+
+    if (std::filesystem::exists(boot_bin, ec))
+    {
+        chosen_exe = boot_bin;
+        res.executable_name = "BOOT.BIN";
+    }
+    else if (std::filesystem::exists(eboot_bin, ec))
+    {
+        chosen_exe = eboot_bin;
+        res.executable_name = "EBOOT.BIN";
+    }
+    else
+    {
+        res.status = IdentifyStatus::MissingExecutable;
+        res.message = "Neither BOOT.BIN nor EBOOT.BIN found in PSP_GAME/SYSDIR";
+        return res;
+    }
+
+    std::ifstream exe_file(chosen_exe, std::ios::binary);
+    if (!exe_file.is_open())
+    {
+        res.status = IdentifyStatus::MissingExecutable;
+        res.message = "Failed to open executable: " + chosen_exe.string();
+        return res;
+    }
+    std::vector<uint8_t> exe_bytes((std::istreambuf_iterator<char>(exe_file)),
+                                   std::istreambuf_iterator<char>());
+    res.executable_size = exe_bytes.size();
+
+    uint8_t digest[20];
+    repsp::runtime::ComputeSha1(exe_bytes.data(), exe_bytes.size(), digest);
+    res.executable_sha1 = ToHex(digest, sizeof(digest));
+
+    const Variant* matched = FindVariant(variants, res.disc_id, res.disc_version, res.executable_sha1);
+    if (matched != nullptr)
+    {
+        res.status = IdentifyStatus::Success;
+        res.matched_variant = matched;
+        res.message = "Successfully identified: " + res.title + " (" + res.disc_id + " v" + res.disc_version + ")";
+    }
+    else
+    {
+        res.status = IdentifyStatus::UnregisteredVariant;
+        res.message = "Unregistered variant: DISC_ID=" + res.disc_id +
+                      ", DISC_VERSION=" + res.disc_version +
+                      ", SHA1=" + res.executable_sha1;
+    }
+
+    return res;
 }
 
 } // namespace
@@ -206,28 +330,11 @@ const Variant* FindVariant(const std::vector<Variant>& variants,
                            const std::string& disc_version,
                            const std::string& sha1)
 {
-    // Disc ID in PARAM.SFO may omit hyphen (e.g. ULKS46116 vs ULKS-46116)
-    std::string norm_id;
-    for (char c : disc_id)
-    {
-        if (c != '-')
-        {
-            norm_id.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-        }
-    }
+    const std::string norm_id = NormalizeDiscId(disc_id);
 
     for (const auto& v : variants)
     {
-        std::string v_norm_id;
-        for (char c : v.disc_id)
-        {
-            if (c != '-')
-            {
-                v_norm_id.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-            }
-        }
-
-        if (norm_id == v_norm_id &&
+        if (norm_id == NormalizeDiscId(v.disc_id) &&
             disc_version == v.disc_version &&
             sha1 == v.sha1)
         {
@@ -242,94 +349,142 @@ IdentifyResult IdentifyGameDirectory(const std::filesystem::path& game_dir,
 {
     IdentifyResult res;
 
-    if (!std::filesystem::exists(game_dir) || !std::filesystem::is_directory(game_dir))
+    std::error_code ec;
+    if (!std::filesystem::exists(game_dir, ec) || !std::filesystem::is_directory(game_dir, ec))
     {
         res.status = IdentifyStatus::MissingDirectory;
         res.message = "Game directory does not exist or is not a directory: " + game_dir.string();
         return res;
     }
 
-    std::filesystem::path sfo_path = game_dir / "PSP_GAME" / "PARAM.SFO";
-    if (!std::filesystem::exists(sfo_path))
+    // Rule 1: If P/PSP_GAME/PARAM.SFO exists, P is a single disc directory.
+    std::filesystem::path direct_sfo = game_dir / "PSP_GAME" / "PARAM.SFO";
+    if (std::filesystem::exists(direct_sfo, ec))
     {
-        res.status = IdentifyStatus::MissingParamSfo;
-        res.message = "PARAM.SFO not found at: " + sfo_path.string();
+        return IdentifySingleDiscDirectory(game_dir, variants);
+    }
+
+    // Rule 2: Otherwise P is a collection folder of discs. Scan immediate subfolders
+    // containing PSP_GAME/PARAM.SFO; skip empty, non-disc, or unreadable subfolders quietly.
+    std::vector<std::filesystem::path> subdirs;
+    std::filesystem::directory_iterator it(
+        game_dir, std::filesystem::directory_options::skip_permission_denied, ec);
+    if (!ec)
+    {
+        std::filesystem::directory_iterator end;
+        for (; it != end; it.increment(ec))
+        {
+            if (ec)
+            {
+                ec.clear();
+                continue;
+            }
+            std::error_code entry_ec;
+            if (it->is_directory(entry_ec) && !entry_ec)
+            {
+                subdirs.push_back(it->path());
+            }
+        }
+    }
+    std::sort(subdirs.begin(), subdirs.end());
+
+    std::vector<IdentifyResult> matched_discs;
+    std::vector<ExtraDisc> extra_discs;
+    std::vector<std::string> found_disc_ids;
+
+    for (const auto& sub_dir : subdirs)
+    {
+        std::error_code sub_ec;
+        std::filesystem::path sub_sfo = sub_dir / "PSP_GAME" / "PARAM.SFO";
+        if (!std::filesystem::is_regular_file(sub_sfo, sub_ec) || sub_ec)
+        {
+            continue;
+        }
+
+        std::ifstream sfo_file(sub_sfo, std::ios::binary);
+        if (!sfo_file.is_open())
+        {
+            continue;
+        }
+        std::vector<uint8_t> sfo_bytes((std::istreambuf_iterator<char>(sfo_file)),
+                                       std::istreambuf_iterator<char>());
+        auto sfo_opt = repsp::module::ParamSfo::Parse(sfo_bytes.data(), sfo_bytes.size());
+        if (!sfo_opt.has_value())
+        {
+            continue;
+        }
+
+        const std::string sub_disc_id = sfo_opt->GetString("DISC_ID").value_or("");
+        if (sub_disc_id.empty())
+        {
+            continue;
+        }
+        found_disc_ids.push_back(sub_disc_id);
+
+        if (HasVariantWithDiscId(variants, sub_disc_id))
+        {
+            IdentifyResult sub_res = IdentifySingleDiscDirectory(sub_dir, variants);
+            if (sub_res.status == IdentifyStatus::Success)
+            {
+                matched_discs.push_back(std::move(sub_res));
+            }
+            else
+            {
+                extra_discs.push_back(ExtraDisc{sub_disc_id, sub_dir});
+            }
+        }
+        else
+        {
+            extra_discs.push_back(ExtraDisc{sub_disc_id, sub_dir});
+        }
+    }
+
+    if (matched_discs.size() == 1u)
+    {
+        matched_discs[0].extra_discs = std::move(extra_discs);
+        return matched_discs[0];
+    }
+
+    if (matched_discs.size() > 1u)
+    {
+        std::ostringstream oss;
+        oss << "Multiple registered main discs found in " << game_dir.string() << ": ";
+        for (size_t i = 0; i < matched_discs.size(); ++i)
+        {
+            if (i > 0u)
+            {
+                oss << ", ";
+            }
+            oss << matched_discs[i].disc_id << " (" << matched_discs[i].resolved_dir.string() << ")";
+        }
+        oss << "; expected a single main disc under " << game_dir.string()
+            << "/<DISC_ID>/PSP_GAME/PARAM.SFO or pass a specific disc folder directly";
+        res.status = IdentifyStatus::AmbiguousDiscDirectory;
+        res.message = oss.str();
         return res;
     }
 
-    std::ifstream sfo_file(sfo_path, std::ios::binary);
-    if (!sfo_file.is_open())
+    std::ostringstream oss;
+    oss << "No registered main disc found in " << game_dir.string() << " (found discs: ";
+    if (found_disc_ids.empty())
     {
-        res.status = IdentifyStatus::InvalidParamSfo;
-        res.message = "Failed to open PARAM.SFO at: " + sfo_path.string();
-        return res;
-    }
-    std::vector<uint8_t> sfo_bytes((std::istreambuf_iterator<char>(sfo_file)),
-                                   std::istreambuf_iterator<char>());
-    auto sfo_opt = repsp::module::ParamSfo::Parse(sfo_bytes.data(), sfo_bytes.size());
-    if (!sfo_opt.has_value())
-    {
-        res.status = IdentifyStatus::InvalidParamSfo;
-        res.message = "Failed to parse PARAM.SFO (invalid SFO format)";
-        return res;
-    }
-
-    res.disc_id = sfo_opt->GetString("DISC_ID").value_or("");
-    res.disc_version = sfo_opt->GetString("DISC_VERSION").value_or("");
-    res.title = sfo_opt->GetString("TITLE").value_or("");
-
-    // Identify executable candidate: prefer BOOT.BIN, fallback to EBOOT.BIN
-    std::filesystem::path boot_bin = game_dir / "PSP_GAME" / "SYSDIR" / "BOOT.BIN";
-    std::filesystem::path eboot_bin = game_dir / "PSP_GAME" / "SYSDIR" / "EBOOT.BIN";
-    std::filesystem::path chosen_exe;
-
-    if (std::filesystem::exists(boot_bin))
-    {
-        chosen_exe = boot_bin;
-        res.executable_name = "BOOT.BIN";
-    }
-    else if (std::filesystem::exists(eboot_bin))
-    {
-        chosen_exe = eboot_bin;
-        res.executable_name = "EBOOT.BIN";
+        oss << "none";
     }
     else
     {
-        res.status = IdentifyStatus::MissingExecutable;
-        res.message = "Neither BOOT.BIN nor EBOOT.BIN found in PSP_GAME/SYSDIR";
-        return res;
+        for (size_t i = 0; i < found_disc_ids.size(); ++i)
+        {
+            if (i > 0u)
+            {
+                oss << ", ";
+            }
+            oss << found_disc_ids[i];
+        }
     }
-
-    std::ifstream exe_file(chosen_exe, std::ios::binary);
-    if (!exe_file.is_open())
-    {
-        res.status = IdentifyStatus::MissingExecutable;
-        res.message = "Failed to open executable: " + chosen_exe.string();
-        return res;
-    }
-    std::vector<uint8_t> exe_bytes((std::istreambuf_iterator<char>(exe_file)),
-                                   std::istreambuf_iterator<char>());
-    res.executable_size = exe_bytes.size();
-
-    uint8_t digest[20];
-    repsp::runtime::ComputeSha1(exe_bytes.data(), exe_bytes.size(), digest);
-    res.executable_sha1 = ToHex(digest, sizeof(digest));
-
-    const Variant* matched = FindVariant(variants, res.disc_id, res.disc_version, res.executable_sha1);
-    if (matched != nullptr)
-    {
-        res.status = IdentifyStatus::Success;
-        res.matched_variant = matched;
-        res.message = "Successfully identified: " + res.title + " (" + res.disc_id + " v" + res.disc_version + ")";
-    }
-    else
-    {
-        res.status = IdentifyStatus::UnregisteredVariant;
-        res.message = "Unregistered variant: DISC_ID=" + res.disc_id +
-                      ", DISC_VERSION=" + res.disc_version +
-                      ", SHA1=" + res.executable_sha1;
-    }
-
+    oss << "; expected " << game_dir.string() << "/<DISC_ID>/PSP_GAME/PARAM.SFO or "
+        << game_dir.string() << "/PSP_GAME/PARAM.SFO)";
+    res.status = IdentifyStatus::MissingParamSfo;
+    res.message = oss.str();
     return res;
 }
 

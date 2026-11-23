@@ -14,6 +14,9 @@ PT_LOAD = 1
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_REPSP_DIR = REPO_ROOT / "third_party" / "repsp"
+sys.path.insert(0, str(REPO_ROOT / "scripts" / "recomp"))
+
+from disc_resolver import DiscResolutionError, resolve_main_disc
 
 
 def sha1_nid(name: str) -> int:
@@ -158,8 +161,8 @@ def main() -> int:
     parser.add_argument(
         "binary",
         nargs="?",
-        default="roms/PSP_GAME/SYSDIR/BOOT.BIN",
-        help="Path to PSP ELF/PRX binary (default: roms/PSP_GAME/SYSDIR/BOOT.BIN)",
+        default="roms",
+        help="Path to PSP ELF/PRX binary, disc folder, or disc collection folder (default: roms)",
     )
     parser.add_argument(
         "--repsp",
@@ -168,7 +171,26 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    bin_path = Path(args.binary)
+    target = Path(args.binary)
+    if target.is_file():
+        bin_path = target
+    else:
+        try:
+            disc_dir, extra_discs = resolve_main_disc(target)
+        except DiscResolutionError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        for extra_id, extra_path in extra_discs:
+            print(f"Link disc candidate: {extra_id} ({extra_path})")
+        boot_bin = disc_dir / "PSP_GAME" / "SYSDIR" / "BOOT.BIN"
+        eboot_bin = disc_dir / "PSP_GAME" / "SYSDIR" / "EBOOT.BIN"
+        if boot_bin.is_file():
+            bin_path = boot_bin
+        elif eboot_bin.is_file():
+            bin_path = eboot_bin
+        else:
+            print(f"Error: Neither BOOT.BIN nor EBOOT.BIN found in {disc_dir / 'PSP_GAME' / 'SYSDIR'}", file=sys.stderr)
+            return 1
     repsp_dir = Path(args.repsp)
 
     libs = parse_elf_imports(bin_path)

@@ -6,7 +6,7 @@
 
 ## 1. 기본 부팅 실행
 
-1. Win64 Release 빌드 후 게임 디렉터리(`roms/`)를 인자로 전달해 실행한다. 창 없이 실행하려면 `--headless`를 붙인다(오디오는 더미 풀 클록으로 구동). 제한된 VBlank 수만큼만 실행하려면 `--max-vblanks <N>`을 지정하며, 정해진 VBlank 시점에 컨트롤러 입력을 주입하려면 `--input-script <파일>`을 사용한다.
+1. Win64 Release 빌드 후 디스크 모음 폴더(`roms`) 또는 개별 디스크 폴더(`roms/ULKS46116`)를 인자로 전달해 실행한다. 창 없이 실행하려면 `--headless`를 붙인다(오디오는 더미 풀 클록으로 구동). 제한된 VBlank 수만큼만 실행하려면 `--max-vblanks <N>`을 지정하며, 정해진 VBlank 시점에 컨트롤러 입력을 주입하려면 `--input-script <파일>`을 사용한다.
    * `--renderer <sw|gl>`: 렌더 백엔드를 선택한다(창 모드 기본값 `gl`, `--headless` 기본값 `sw`). `gl`은 OpenGL 3.3 Core 백엔드를 사용하며, GL 문맥 생성에 실패하면 1줄 경고를 남기고 `sw`로 폴백한다. `--headless --renderer gl`은 숨김 창으로 GL 문맥을 만들어 실행한다.
    * `--scale <1..8>`: 창 배율(기본값 `2`)을 지정한다. `--renderer gl`에서는 내부 FBO 해상도(`480*scale × 272*scale`)에도 동일하게 적용된다.
    * `--audio-latency-ms <N>`: 호스트 측 오디오 중간 버퍼의 목표 지연(ms, 기본값 `20`)을 지정한다.
@@ -86,6 +86,8 @@ CMake 구성 시 `-DREDMP2_TRACE_GUEST=ON`을 켜면(`OFF`가 기본값이며 �
 This guide describes how to run `redmp2` to inspect kernel/UMD HLE boot behavior and trace NID calls.
 
 ## 1. Default Boot Execution
+
+Pass either the disc collection folder (`roms`) or a direct disc folder (`roms/ULKS46116`):
 
 ```powershell
 .\build\win64-release\Release\redmp2.exe roms --variants src\game\dmp2\recomp\variants.json --headless --max-vblanks 600

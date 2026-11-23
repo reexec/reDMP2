@@ -34,12 +34,21 @@ enum class IdentifyStatus
     InvalidParamSfo = 3,
     MissingExecutable = 4,
     UnregisteredVariant = 5,
+    AmbiguousDiscDirectory = 6,
+};
+
+struct ExtraDisc
+{
+    std::string disc_id;
+    std::filesystem::path path;
 };
 
 struct IdentifyResult
 {
     IdentifyStatus status{IdentifyStatus::MissingDirectory};
     std::string message;
+    std::filesystem::path resolved_dir;
+    std::vector<ExtraDisc> extra_discs;
     std::string disc_id;
     std::string disc_version;
     std::string title;

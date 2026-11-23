@@ -81,7 +81,7 @@ void PrintUsage(const char* prog)
 {
     std::cout << "Usage: " << prog << " <game_directory> [options]\n\n"
               << "Arguments:\n"
-              << "  <game_directory>       Path to extracted game directory (containing PSP_GAME/)\n\n"
+              << "  <game_directory>       Path to disc directory (containing PSP_GAME/) or disc collection directory (e.g. roms/)\n\n"
               << "Options:\n"
               << "  --variants <path>      Path to variants.json (default: search adjacent/source)\n"
               << "  --headless             Run without opening a display window\n"
@@ -1216,7 +1216,9 @@ std::filesystem::path FindDefaultVariantsJson(const std::filesystem::path& app_d
         app_dir / ".." / ".." / "src" / "game" / "dmp2" / "recomp" / "variants.json",
         app_dir / ".." / ".." / ".." / "src" / "game" / "dmp2" / "recomp" / "variants.json",
         game_dir / "variants.json",
+        game_dir / ".." / "variants.json",
         game_dir / ".." / "src" / "game" / "dmp2" / "recomp" / "variants.json",
+        game_dir / ".." / ".." / "src" / "game" / "dmp2" / "recomp" / "variants.json",
         std::filesystem::current_path() / "src" / "game" / "dmp2" / "recomp" / "variants.json",
         std::filesystem::current_path() / "variants.json",
     };
@@ -1494,17 +1496,25 @@ int main(int argc, char* argv[])
         return static_cast<int>(result.status);
     }
 
+    const std::filesystem::path resolved_game_dir =
+        result.resolved_dir.empty() ? game_dir : result.resolved_dir;
+
     std::cout << "[redmp2] Game identified successfully:\n"
               << "  Title:       " << result.title << "\n"
               << "  Disc ID:     " << result.disc_id << "\n"
               << "  Version:     " << result.disc_version << "\n"
               << "  Executable:  " << result.executable_name << " (" << result.executable_size << " bytes)\n"
               << "  SHA-1:       " << result.executable_sha1 << "\n";
+    for (const auto& extra : result.extra_discs)
+    {
+        std::cout << "[redmp2] Link disc candidate: " << extra.disc_id
+                  << " (" << extra.path.string() << ")\n";
+    }
 
     if (lift_check)
     {
 #if REDMP2_HAVE_RECOMP
-        return RunLiftCheck(game_dir, result, static_cast<uint32_t>(REDMP2_LIFT_BASE));
+        return RunLiftCheck(resolved_game_dir, result, static_cast<uint32_t>(REDMP2_LIFT_BASE));
 #else
         std::cerr << "Error: redmp2 was built without generated code (--lift-check unavailable).\n";
         return 1;
@@ -1512,7 +1522,7 @@ int main(int argc, char* argv[])
     }
 
 #if REDMP2_HAVE_RECOMP
-    return RunBoot(game_dir, result, static_cast<uint32_t>(REDMP2_LIFT_BASE), headless, use_gl, scale, max_vblanks,
+    return RunBoot(resolved_game_dir, result, static_cast<uint32_t>(REDMP2_LIFT_BASE), headless, use_gl, scale, max_vblanks,
                    input_script_path, save_dir,
                    dialog_answer_yes ? repsp::hle::utility::DialogAnswer::kYes
                                      : repsp::hle::utility::DialogAnswer::kNo,

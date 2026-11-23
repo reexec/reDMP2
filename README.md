@@ -81,12 +81,24 @@ ctest --test-dir build/linux-x64-debug --output-on-failure
 
 ## 실행 및 파이프라인 사용법
 
-### 1. 디스크 덤프 등록
+### 1. 디스크 덤프 배치 및 등록
 
-추출한 UMD 파일들이 위치한 디렉터리(기본 `roms/`)를 `variants.json`에 등록합니다:
+추출한 UMD 파일들을 디스크 ID별 하위 폴더에 배치합니다(`roms/ULKS46116/`에 DMP2 필수, `roms/ULKS46050/`은 링크 디스크용 DMP1 선택 — 없거나 비어 있어도 DMP2는 정상 동작합니다):
+
+```text
+roms/
+├─ ULKS46116/          DMP2 (필수)
+│  ├─ PSP_GAME/
+│  └─ UMD_DATA.BIN
+└─ ULKS46050/          DJMAX Portable 1 (선택, 링크 디스크)
+   └─ PSP_GAME/ ...
+```
+
+디스크 모음 폴더(`roms`) 또는 개별 디스크 폴더(`roms/ULKS46116`) 모두 사용할 수 있습니다. `variants.json`에 등록합니다:
 
 ```powershell
 python scripts/recomp/register_disc.py roms
+# 또는: python scripts/recomp/register_disc.py roms/ULKS46116
 ```
 
 ### 2. C 코드 재생성 (Lifting)
@@ -103,6 +115,7 @@ python scripts/recomp/regenerate.py roms
 
 ```powershell
 .\build\win64-debug\Debug\redmp2.exe roms
+# 또는: .\build\win64-debug\Debug\redmp2.exe roms/ULKS46116
 ```
 
 ### 단축키, 내부 설정 메뉴, `redmp2.ini`
@@ -175,9 +188,11 @@ ctest --test-dir build/linux-x64-debug --output-on-failure
 
 ## Running
 
+Place extracted UMD dumps per disc ID under `roms/` (`roms/ULKS46116/` for DMP2 is required; `roms/ULKS46050/` for DMP1 link disc is optional and may be absent or empty). Both the collection folder (`roms`) and a direct disc folder (`roms/ULKS46116`) are accepted:
+
 1. Register disc: `python scripts/recomp/register_disc.py roms`
 2. Generate lifted C: `python scripts/recomp/regenerate.py roms`
-3. Run identifier: `./build/win64-debug/Debug/redmp2 roms`
+3. Run: `./build/win64-debug/Debug/redmp2 roms` (or `roms/ULKS46116`)
 
 ### Shortcuts, In-Game Menu, and `redmp2.ini`
 

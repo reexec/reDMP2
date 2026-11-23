@@ -73,7 +73,7 @@ ctest --test-dir build/win64-debug -C Debug --output-on-failure
 
 ## 5. 게임 데이터 등록 및 실행
 
-정품 UMD에서 추출한 파일들을 `roms/` 디렉터리에 배치한 후:
+정품 UMD에서 추출한 파일들을 디스크 ID별 하위 폴더(`roms/ULKS46116/`에 DMP2 필수, `roms/ULKS46050/`은 선택)에 배치한 후 실행합니다. 디스크 모음 폴더(`roms`)와 개별 디스크 폴더(`roms/ULKS46116`) 모두 지원합니다:
 
 ```powershell
 # 1. variants.json에 디스크 정보 등록
@@ -82,7 +82,7 @@ python scripts/recomp/register_disc.py roms
 # 2. C 코드 재생성
 python scripts/recomp/regenerate.py roms
 
-# 3. 디스크 식별 및 실행
+# 3. 디스크 식별 및 실행 (roms 또는 roms/ULKS46116)
 .\build\win64-debug\Debug\redmp2.exe roms
 ```
 
@@ -114,7 +114,7 @@ Or use `scripts\build_win64.bat [Debug|Release] [ffmpeg] [notest]` (`ffmpeg` dow
 
 ## 3. Disc Registration & Running
 
-Place extracted UMD files into `roms/`:
+Place extracted UMD files per disc ID under `roms/` (`roms/ULKS46116/` for DMP2 is required; `roms/ULKS46050/` is optional). Both `roms` and `roms/ULKS46116` work:
 ```powershell
 python scripts/recomp/register_disc.py roms
 python scripts/recomp/regenerate.py roms

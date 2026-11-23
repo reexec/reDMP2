@@ -53,7 +53,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    ROM["정품 UMD 덤프<br/>(roms/PSP_GAME/)"] --> REG["register_disc.py<br/>PARAM.SFO + SHA-1"]
+    ROM["정품 UMD 덤프<br/>(roms/ULKS46116/PSP_GAME/)"] --> REG["register_disc.py<br/>PARAM.SFO + SHA-1"]
     REG --> VAR["variants.json"]
     ROM --> LIFT["regenerate.py<br/>allegrexrecomp emit"]
     LIFT --> GEN["src/game/dmp2/recomp/generated/<br/>(dmp2_funcs_*.c, dmp2_funcs.h)"]
@@ -81,7 +81,7 @@ sequenceDiagram
 
     User->>App: redmp2 <game_dir>
     App->>Profile: IdentifyGameDirectory(game_dir, variants)
-    Profile->>Profile: game_dir 존재 및 디렉터리 여부 확인
+    Profile->>Profile: game_dir 확인 (개별 디스크 또는 모음 폴더 스캔)
     Profile->>SFO: Parse(PSP_GAME/PARAM.SFO)
     SFO-->>Profile: DISC_ID, DISC_VERSION, TITLE
     Profile->>Profile: BOOT.BIN 또는 EBOOT.BIN 탐색
