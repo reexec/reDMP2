@@ -10,7 +10,8 @@
    * `--renderer <sw|gl>`: 렌더 백엔드를 선택한다(창 모드 기본값 `gl`, `--headless` 기본값 `sw`). `gl`은 OpenGL 3.3 Core 백엔드를 사용하며, GL 문맥 생성에 실패하면 1줄 경고를 남기고 `sw`로 폴백한다. `--headless --renderer gl`은 숨김 창으로 GL 문맥을 만들어 실행한다.
    * `--scale <1..8>`: 창 배율(기본값 `2`)을 지정한다. `--renderer gl`에서는 내부 FBO 해상도(`480*scale × 272*scale`)에도 동일하게 적용된다.
    * `--audio-latency-ms <N>`: 호스트 측 오디오 중간 버퍼의 목표 지연(ms, 기본값 `20`)을 지정한다.
-   * `--save-dir <디렉터리>`: `ms0:/PSP/SAVEDATA`에 연결할 호스트 세이브 디렉터리를 지정한다. 생략하면 OS 사용자 데이터 디렉터리(`SDL_GetPrefPath` 기반) 아래 `savedata/`를 사용한다.
+   * `--save-dir <디렉터리>`: 메모리 스틱 루트(`ms0:`)를 지정한다. `sceUtility` 세이브 데이터는 `<디렉터리>/PSP/SAVEDATA`에 저장된다. 생략하면 OS 사용자 데이터 디렉터리(`SDL_GetPrefPath` 기반) 아래 `ms0/`를 사용하며, 예전 기본 위치(`savedata/`)에 세이브가 있고 새 위치가 비어 있으면 처음 실행 시 자동으로 옮긴다.
+   * `--insert-disc <vblank>:<disc_id|main>`: 지정한 VBlank에 UMD를 꺼내고 `<disc_id>`(예: `ULKS46050`) 또는 주 디스크(`main`)를 넣는다(여러 번 지정 가능).
    * `--dialog-answer <yes|no>`: 그리지 않는 Yes/No 메시지 다이얼로그의 응답을 지정한다(기본값 `yes`).
    * `--crash-dir <디렉터리>`, `--no-input-record`, `--debug-crash <kind>`: 실행별 로그·입력 녹화·크래시 보고서/미니덤프 저장 위치와 테스트 크래시를 제어한다(자세한 분석·재현 절차는 [crash-reporting.md](crash-reporting.md) 참고).
    ```powershell
@@ -93,7 +94,7 @@ Pass either the disc collection folder (`roms`) or a direct disc folder (`roms/U
 .\build\win64-release\Release\redmp2.exe roms --variants src\game\dmp2\recomp\variants.json --headless --max-vblanks 600
 ```
 
-Pass `--max-vblanks <N>` to stop deterministically after `N` VBlanks, `--renderer <sw|gl>` to select the render backend (`gl` default in windowed mode, `sw` default with `--headless`), `--scale <1..8>` to set window scale and GL internal FBO resolution (`480*scale x 272*scale`, default `2`), `--audio-latency-ms <N>` to set host audio buffer target latency (default `20`), `--input-script <path>` to inject timed controller state, `--save-dir <dir>` to override the host `ms0:/PSP/SAVEDATA` directory, `--dialog-answer <yes|no>` for undrawn yes/no message dialogs (default `yes`), and `--crash-dir <dir>` / `--no-input-record` / `--debug-crash <kind>` for crash capture and input recording (see [crash-reporting.md](crash-reporting.md)).
+Pass `--max-vblanks <N>` to stop deterministically after `N` VBlanks, `--renderer <sw|gl>` to select the render backend (`gl` default in windowed mode, `sw` default with `--headless`), `--scale <1..8>` to set window scale and GL internal FBO resolution (`480*scale x 272*scale`, default `2`), `--audio-latency-ms <N>` to set host audio buffer target latency (default `20`), `--input-script <path>` to inject timed controller state, `--save-dir <dir>` to override the host Memory Stick root (`ms0:`, with savedata stored under `<dir>/PSP/SAVEDATA`, defaulting to `<user_data>/ms0` with automatic one-time migration from legacy `<user_data>/savedata`), `--insert-disc <vblank>:<disc_id|main>` (repeatable) to schedule a UMD swap at a given VBlank, `--dialog-answer <yes|no>` for undrawn yes/no message dialogs (default `yes`), and `--crash-dir <dir>` / `--no-input-record` / `--debug-crash <kind>` for crash capture and input recording (see [crash-reporting.md](crash-reporting.md)).
 
 ## 2. Tracing with `REPSP_HLE_TRACE`
 

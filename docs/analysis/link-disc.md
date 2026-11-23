@@ -148,8 +148,11 @@ stateDiagram-v2
   * `0x088BD8CC`: `mode = 19` (`ERASESECURE`, 보안 파일 삭제)
   * `0x088BD3B0`: `mode = 22` (`GETSIZE`, 크기 조회)
 * **DMP2로 되돌린 뒤 하는 일 및 `SD.BIN` 기록**:
-  * 상태 `6`에서 `ULKS46116`이 확인되면 `0x0886E0A4`가 링크 디스크 리소스를 정리하고 `0x0886ECA8`로 DMP1 아카이브를 닫은 뒤 DMP2 `all.mp`·`all2.mp`를 다시 열어 타이틀(장면 `24`)로 복귀한다(**확인됨**).
-  * `0x0886E0A4` 자체에는 `SD.BIN`을 바로 저장하는 호출이 없으며, 링크 디스크 플레이 중 얻은 기록/해금이 일반 게임 세이브(`SD.BIN`)의 어느 필드에 저장되는지는 **미확정**(**교체 모델 뒤 확인**).
+  * **교체 모델 구현 뒤 실측 확인됨(2026-11-24)**:
+    * 상태 1~3에서 추출되는 실제 슬롯·파일명은 `ULKS46116DATA0/SD2.BIN`(2,272,173 B, `linkdisc_kr.mp`)과 `ULKS46116DATA1/SD3.BIN`(484,356 B, `linkdisc_game.mp`)이며, 재실행 시 `FILES(12)`가 기존 파일을 확인해 재생성 없이 `READDATASECURE(15)`로 바로 읽는다.
+    * DMP1(`ULKS46050`) 삽입 후 `sceUmdReplaceProhibit()`가 호출되고, DMP1 링크 모드에서 DMP1 곡 1곡을 `--autoplay`로 결과 화면(`[ RESULT - 267 ms ]`)까지 완주할 수 있음을 확인했다.
+    * DMP1 타이틀에서 `CROSS`로 종료해 DMP2(`ULKS46116`)를 재삽입하면 `sceUmdReplaceProhibit()` 후 `0x0886E0A4`→`0x0886ECA8`로 DMP2 `all.mp`·`all2.mp`를 다시 열고, 이어서 `ULKS46116/SD.BIN`(15,260 B)을 `AUTOSAVE(mode 1)`로 저장한 뒤 타이틀 화면으로 복귀한다.
+  * `SD.BIN` 내부의 구체적인 비트/필드 오프셋은 아직 분해하지 않았다(**미확정**).
 
 ---
 
@@ -328,8 +331,11 @@ stateDiagram-v2
   * `0x088BD8CC`: `mode = 19` (`ERASESECURE`)
   * `0x088BD3B0`: `mode = 22` (`GETSIZE`)
 * **After switching back to DMP2 and `SD.BIN` persistence**:
-  * When `ULKS46116` is confirmed in state `6`, `0x0886E0A4` cleans up Link Disc resources, calls `0x0886ECA8` to close DMP1's archives and reopen DMP2's `all.mp`/`all2.mp`, and returns to Title (scene `24`) (**confirmed**).
-  * `0x0886E0A4` does not directly write `SD.BIN`; which fields of `SD.BIN` record Link Disc progress or unlocks is **unresolved** (**to confirm after the swap model**).
+  * **Confirmed live after implementing the swap model (2026-11-24)**:
+    * The actual slots/files written in states 1–3 are `ULKS46116DATA0/SD2.BIN` (2,272,173 B, `linkdisc_kr.mp`) and `ULKS46116DATA1/SD3.BIN` (484,356 B, `linkdisc_game.mp`); on subsequent runs `FILES(12)` finds them and skips straight to `READDATASECURE(15)`.
+    * After inserting DMP1 (`ULKS46050`), `sceUmdReplaceProhibit()` is called, and a DMP1 song plays cleanly to the result screen (`[ RESULT - 267 ms ]`) with `--autoplay`.
+    * Exiting via `CROSS` and reinserting DMP2 (`ULKS46116`) calls `sceUmdReplaceProhibit()`, reopens DMP2's `all.mp`/`all2.mp`, saves `ULKS46116/SD.BIN` (15,260 B) via `AUTOSAVE(mode 1)`, and returns to Title.
+  * Exact field offsets inside `SD.BIN` remain **unresolved**.
 
 ---
 

@@ -415,6 +415,7 @@ IdentifyResult IdentifyGameDirectory(const std::filesystem::path& game_dir,
         }
 
         const std::string sub_disc_id = sfo_opt->GetString("DISC_ID").value_or("");
+        const std::string sub_title = sfo_opt->GetString("TITLE").value_or("");
         if (sub_disc_id.empty())
         {
             continue;
@@ -430,12 +431,12 @@ IdentifyResult IdentifyGameDirectory(const std::filesystem::path& game_dir,
             }
             else
             {
-                extra_discs.push_back(ExtraDisc{sub_disc_id, sub_dir});
+                extra_discs.push_back(ExtraDisc{sub_disc_id, sub_dir, sub_title});
             }
         }
         else
         {
-            extra_discs.push_back(ExtraDisc{sub_disc_id, sub_dir});
+            extra_discs.push_back(ExtraDisc{sub_disc_id, sub_dir, sub_title});
         }
     }
 
